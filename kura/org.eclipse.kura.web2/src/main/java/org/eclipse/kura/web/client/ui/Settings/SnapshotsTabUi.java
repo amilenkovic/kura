@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -8,6 +8,7 @@
  *
  * Contributors:
  *     Eurotech
+ *     Red Hat Inc
  *******************************************************************************/
 package org.eclipse.kura.web.client.ui.Settings;
 
@@ -18,6 +19,7 @@ import java.util.logging.Logger;
 import org.eclipse.kura.web.client.messages.Messages;
 import org.eclipse.kura.web.client.ui.EntryClassUi;
 import org.eclipse.kura.web.client.ui.Tab;
+import org.eclipse.kura.web.client.util.DownloadHelper;
 import org.eclipse.kura.web.client.util.FailureHandler;
 import org.eclipse.kura.web.shared.GwtKuraErrorCode;
 import org.eclipse.kura.web.shared.GwtKuraException;
@@ -36,10 +38,8 @@ import org.gwtbootstrap3.client.ui.gwt.CellTable;
 import org.gwtbootstrap3.client.ui.html.Span;
 
 import com.google.gwt.core.client.GWT;
-import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
-import com.google.gwt.http.client.URL;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.cellview.client.TextColumn;
@@ -105,8 +105,6 @@ public class SnapshotsTabUi extends Composite implements Tab {
     GwtSnapshot selected;
     final SingleSelectionModel<GwtSnapshot> selectionModel = new SingleSelectionModel<>();
 
-    private Element downloadIframe;
-
     private final ListDataProvider<GwtSnapshot> snapshotsDataProvider = new ListDataProvider<>();
 
     public SnapshotsTabUi() {
@@ -114,8 +112,6 @@ public class SnapshotsTabUi extends Composite implements Tab {
         initWidget(uiBinder.createAndBindUi(this));
         initTable();
         this.snapshotsGrid.setSelectionModel(this.selectionModel);
-
-        initDownloadIframe();
 
         initInterfaceButtons();
 
@@ -220,7 +216,7 @@ public class SnapshotsTabUi extends Composite implements Tab {
 
             @Override
             public String getValue(GwtSnapshot object) {
-                return String.valueOf(object.get("createdOnFormatted"));
+                return String.valueOf(object.getCreatedOnFormatted());
             }
         };
         col2.setCellStyleNames("status-table-row");
@@ -289,7 +285,7 @@ public class SnapshotsTabUi extends Composite implements Tab {
 
                         @Override
                         public void onSuccess(GwtXSRFToken token) {
-                            downloadSnapshot(token.getToken());
+                            downloadSnapshot(token);
                         }
                     });
                 }
@@ -314,13 +310,6 @@ public class SnapshotsTabUi extends Composite implements Tab {
             }
         });
     }
-
-    private native void initDownloadIframe() /*-{
-                                             var iframe = document.createElement('iframe');
-                                             iframe.style.display = 'none'
-                                             document.getElementsByTagName('body')[0].appendChild(iframe);
-                                             this.@org.eclipse.kura.web.client.ui.Settings.SnapshotsTabUi::downloadIframe = iframe;
-                                             }-*/;
 
     private void rollback() {
         final GwtSnapshot snapshot = this.selectionModel.getSelectedObject();
@@ -384,20 +373,14 @@ public class SnapshotsTabUi extends Composite implements Tab {
         }
     }
 
-    private void downloadSnapshot(String tokenId) {
+    private void downloadSnapshot(GwtXSRFToken token) {
         final StringBuilder sbUrl = new StringBuilder();
 
         Long snapshot = this.selected.getSnapshotId();
-        sbUrl.append("/" + GWT.getModuleName() + "/device_snapshots?").append("snapshotId=").append(snapshot)
-                .append("&").append("xsrfToken=").append(URL.encodeQueryString(tokenId));
+        sbUrl.append("/device_snapshots?snapshotId=").append(snapshot);
 
-        downloadFile(sbUrl.toString());
+        DownloadHelper.instance().startDownload(token, sbUrl.toString());
     }
-
-    private native void downloadFile(String url) /*-{
-                                                 var downloadIframe = this.@org.eclipse.kura.web.client.ui.Settings.SnapshotsTabUi::downloadIframe;
-                                                 downloadIframe.setAttribute('src', url);
-                                                 }-*/;
 
     private void uploadAndApply() {
         this.uploadModal.show();

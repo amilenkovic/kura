@@ -211,12 +211,12 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
                     logger.info("activate() :: scheduling {} thread in {} minutes ..", TOOGLE_MODEM_THREAD_NAME,
                             TOOGLE_MODEM_THREAD_EXECUTION_DELAY);
                     stopThread.set(false);
-                    task = this.executor.schedule(() -> {
+                    this.task = this.executor.schedule(() -> {
                         Thread.currentThread().setName(TOOGLE_MODEM_THREAD_NAME);
                         try {
                             toggleModem(modemInfo);
                         } catch (InterruptedException interruptedException) {
-                            Thread.interrupted();
+                            Thread.currentThread().interrupt();
                             logger.debug("activate() :: modem monitor interrupted - {}", interruptedException);
                         } catch (Throwable t) {
                             logger.error("activate() :: Exception while monitoring cellular connection ", t);
@@ -241,7 +241,8 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
                 }
                 if (device instanceof UsbTtyDevice) {
                     String deviceNode = ((UsbTtyDevice) device).getDeviceNode();
-                    usbModem.addTtyDev(deviceNode);
+                    Integer interfaceNumber = ((UsbTtyDevice) device).getInterfaceNumber();
+                    usbModem.addTtyDev(deviceNode, interfaceNumber);
                     logger.debug("activate() :: Adding tty resource: {} for {}", deviceNode, device.getUsbPort());
                 } else if (device instanceof UsbBlockDevice) {
                     String deviceNode = ((UsbBlockDevice) device).getDeviceNode();
@@ -254,13 +255,13 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
     }
 
     protected void deactivate(ComponentContext componentContext) {
-        if (task != null && !task.isDone()) {
+        if (this.task != null && !this.task.isDone()) {
             stopThread.set(true);
             toggleModemNotity();
             logger.debug("deactivate() :: Cancelling {} task ...", TOOGLE_MODEM_THREAD_NAME);
-            task.cancel(true);
-            logger.info("deactivate() :: {} task cancelled? = {}", TOOGLE_MODEM_THREAD_NAME, task.isDone());
-            task = null;
+            this.task.cancel(true);
+            logger.info("deactivate() :: {} task cancelled? = {}", TOOGLE_MODEM_THREAD_NAME, this.task.isDone());
+            this.task = null;
         }
 
         if (this.executor != null) {
@@ -269,6 +270,7 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
             try {
                 this.executor.awaitTermination(TOOGLE_MODEM_THREAD_TERMINATION_TOUT, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 logger.warn("Interrupted", e);
             }
             logger.info("deactivate() :: {} Thread terminated? - {}", TOOGLE_MODEM_THREAD_NAME,
@@ -511,7 +513,7 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
 
         NetInterfaceType type = ifconfig.getType();
         boolean isUp = ifconfig.isUp();
-        if ((type == NetInterfaceType.UNKNOWN) && (this.serialModem != null)
+        if (type == NetInterfaceType.UNKNOWN && this.serialModem != null
                 && interfaceName.equals(this.serialModem.getProductName())) {
             // If the interface name is in a form such as "1-3.4", assume it is a modem
             type = NetInterfaceType.MODEM;
@@ -623,7 +625,8 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
             if (event.getProperty(UsbDeviceEvent.USB_EVENT_USB_PORT_PROPERTY) == null) {
                 return;
             }
-            if (event.getProperty(UsbDeviceEvent.USB_EVENT_RESOURCE_PROPERTY) == null) {
+            if (event.getProperty(UsbDeviceEvent.USB_EVENT_RESOURCE_PROPERTY) == null
+                    || ((String) event.getProperty(UsbDeviceEvent.USB_EVENT_RESOURCE_PROPERTY)).startsWith("usb")) {
                 return;
             }
             if (event.getProperty(UsbDeviceEvent.USB_EVENT_DEVICE_TYPE_PROPERTY) == null
@@ -685,12 +688,13 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
                 }
 
                 String resource = (String) event.getProperty(UsbDeviceEvent.USB_EVENT_RESOURCE_PROPERTY);
+                Integer interfaceNumber = (Integer) event.getProperty(UsbDeviceEvent.USB_EVENT_USB_INTERFACE_NUMBER);
                 UsbDeviceType usbDeviceType = (UsbDeviceType) event
                         .getProperty(UsbDeviceEvent.USB_EVENT_DEVICE_TYPE_PROPERTY);
                 logger.debug("handleEvent() :: Found resource: {} of type {} for: {}", resource, usbDeviceType,
                         usbModem.getUsbPort());
                 if (usbDeviceType.equals(UsbDeviceType.USB_TTY_DEVICE)) {
-                    usbModem.addTtyDev(resource);
+                    usbModem.addTtyDev(resource, interfaceNumber);
                 } else if (usbDeviceType.equals(UsbDeviceType.USB_BLOCK_DEVICE)) {
                     usbModem.addBlockDev(resource);
                 }
@@ -714,26 +718,27 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
                     this.addedModems.add(usbModem.getUsbPort());
 
                     if (OS_VERSION != null && TARGET_NAME != null
-                            && OS_VERSION.equals(KuraConstants.Mini_Gateway.getImageName() + "_"
-                                    + KuraConstants.Mini_Gateway.getImageVersion())
-                            && TARGET_NAME.equals(KuraConstants.Mini_Gateway.getTargetName())
-                            || OS_VERSION
-                                    .equals(KuraConstants.Reliagate_10_11.getImageName() + "_"
-                                            + KuraConstants.Reliagate_10_11.getImageVersion())
-                                    && TARGET_NAME.equals(KuraConstants.Reliagate_10_11.getTargetName())) {
-                        if (this.serialModem != null) {
-                            if (SupportedUsbModemInfo.Telit_HE910_D.getVendorId().equals(usbModem.getVendorId())
-                                    && SupportedUsbModemInfo.Telit_HE910_D.getProductId()
-                                            .equals(usbModem.getProductId())) {
-                                logger.info("handleEvent() :: Removing {} from addedModems",
-                                        this.serialModem.getProductName());
-                                this.addedModems.remove(this.serialModem.getProductName());
-                            }
+                            && ((OS_VERSION
+                                    .equals(KuraConstants.Mini_Gateway.getImageName() + "_"
+                                            + KuraConstants.Mini_Gateway.getImageVersion())
+                                    && TARGET_NAME.equals(KuraConstants.Mini_Gateway.getTargetName()))
+                                    || (OS_VERSION
+                                            .equals(KuraConstants.Reliagate_10_11.getImageName() + "_"
+                                                    + KuraConstants.Reliagate_10_11.getImageVersion())
+                                            && TARGET_NAME.equals(KuraConstants.Reliagate_10_11.getTargetName())))) {
+                        if (this.serialModem != null
+                                && SupportedUsbModemInfo.Telit_HE910_D.getVendorId().equals(usbModem.getVendorId())
+                                && SupportedUsbModemInfo.Telit_HE910_D.getProductId().equals(usbModem.getProductId())) {
+                            logger.info("handleEvent() :: Removing {} from addedModems",
+                                    this.serialModem.getProductName());
+                            this.addedModems.remove(this.serialModem.getProductName());
                         }
                     }
                 }
             }
-        } else if (topic.equals(UsbDeviceRemovedEvent.USB_EVENT_DEVICE_REMOVED_TOPIC)) {
+        } else if (topic.equals(UsbDeviceRemovedEvent.USB_EVENT_DEVICE_REMOVED_TOPIC))
+
+        {
             // validate mandatory properties
             if (event.getProperty(UsbDeviceEvent.USB_EVENT_VENDOR_ID_PROPERTY) == null) {
                 return;
@@ -973,7 +978,7 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
 
     private List<ModemInterfaceAddress> getModemInterfaceAddresses(String interfaceName, boolean isUp)
             throws KuraException {
-        List<ModemInterfaceAddress> modemInterfaceAddresses = new ArrayList<ModemInterfaceAddress>();
+        List<ModemInterfaceAddress> modemInterfaceAddresses = new ArrayList<>();
         if (isUp) {
             ConnectionInfo conInfo = new ConnectionInfoImpl(interfaceName);
             ModemInterfaceAddressImpl modemInterfaceAddress = new ModemInterfaceAddressImpl();
@@ -1123,7 +1128,7 @@ public class NetworkServiceImpl implements NetworkService, EventHandler {
                                 break;
                             }
                         }
-                        return (sbIfaceName != null) ? sbIfaceName.toString() : null;
+                        return sbIfaceName != null ? sbIfaceName.toString() : null;
                     } catch (Exception e) {
                         logger.error("failed to parse peers file ", e);
                     }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -26,8 +26,6 @@ import org.eclipse.kura.core.configuration.metatype.Tad;
 import org.eclipse.kura.core.configuration.metatype.Toption;
 import org.eclipse.kura.core.configuration.metatype.Tscalar;
 import org.eclipse.kura.driver.ChannelDescriptor;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.AssetMessages;
 import org.eclipse.kura.type.DataType;
 import org.eclipse.kura.util.collection.CollectionUtil;
 
@@ -63,13 +61,13 @@ import org.eclipse.kura.util.collection.CollectionUtil;
  *
  * @see AssetConfiguration
  */
-public final class BaseChannelDescriptor implements ChannelDescriptor {
+public class BaseChannelDescriptor implements ChannelDescriptor {
 
-    private static final AssetMessages s_message = LocalizationAdapter.adapt(AssetMessages.class);
+    private static final BaseChannelDescriptor instance = new BaseChannelDescriptor();
 
-    private final List<Tad> defaultElements;
+    protected final List<Tad> defaultElements;
 
-    private static void addOptions(Tad target, Enum<?>[] values) {
+    protected static void addOptions(Tad target, Enum<?>[] values) {
         final List<Option> options = target.getOption();
         for (Enum<?> value : values) {
             final String name = value.name();
@@ -83,15 +81,26 @@ public final class BaseChannelDescriptor implements ChannelDescriptor {
     /**
      * Instantiates a new base asset channel descriptor.
      */
-    public BaseChannelDescriptor() {
+    protected BaseChannelDescriptor() {
         this.defaultElements = CollectionUtil.newArrayList();
+
+        final Tad enabled = new Tad();
+        enabled.setId(AssetConstants.ENABLED.value());
+        enabled.setName(AssetConstants.ENABLED.value().substring(1));
+        enabled.setType(Tscalar.BOOLEAN);
+        enabled.setDefault("true");
+        enabled.setDescription("Determines if the channel is enabled or not");
+        enabled.setCardinality(0);
+        enabled.setRequired(true);
+
+        this.defaultElements.add(enabled);
 
         final Tad name = new Tad();
         name.setId(NAME.value());
         name.setName(NAME.value().substring(1));
         name.setType(Tscalar.STRING);
-        name.setDefault(s_message.string());
-        name.setDescription(s_message.channelNameDesc());
+        name.setDefault("Channel-1");
+        name.setDescription("Name of the Channel");
         name.setCardinality(0);
         name.setRequired(true);
 
@@ -100,7 +109,7 @@ public final class BaseChannelDescriptor implements ChannelDescriptor {
         final Tad type = new Tad();
         type.setName(TYPE.value().substring(1));
         type.setId(TYPE.value());
-        type.setDescription(s_message.type());
+        type.setDescription("Type of the channel");
         type.setType(Tscalar.STRING);
         type.setRequired(true);
         type.setDefault(ChannelType.READ.name());
@@ -112,7 +121,7 @@ public final class BaseChannelDescriptor implements ChannelDescriptor {
         final Tad valueType = new Tad();
         valueType.setName(VALUE_TYPE.value().substring(1));
         valueType.setId(VALUE_TYPE.value());
-        valueType.setDescription(s_message.typeChannel());
+        valueType.setDescription("Value type of the channel");
         valueType.setType(Tscalar.STRING);
         valueType.setRequired(true);
         valueType.setDefault(DataType.INTEGER.name());
@@ -126,5 +135,9 @@ public final class BaseChannelDescriptor implements ChannelDescriptor {
     @Override
     public Object getDescriptor() {
         return this.defaultElements;
+    }
+
+    public static BaseChannelDescriptor get() {
+        return instance;
     }
 }

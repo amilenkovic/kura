@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -15,10 +15,12 @@ package org.eclipse.kura.internal.wire.helper;
 
 import static java.util.Objects.requireNonNull;
 import static org.eclipse.kura.configuration.ConfigurationService.KURA_SERVICE_PID;
+import static org.eclipse.kura.wire.graph.Constants.EMITTER_PORT_COUNT_PROP_NAME;
+import static org.eclipse.kura.wire.graph.Constants.RECEIVER_PORT_COUNT_PROP_NAME;
 import static org.osgi.framework.Constants.SERVICE_PID;
 
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
+import java.util.Arrays;
+
 import org.eclipse.kura.util.service.ServiceUtil;
 import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEmitter;
@@ -36,38 +38,20 @@ import org.osgi.service.event.EventAdmin;
  */
 public final class WireHelperServiceImpl implements WireHelperService {
 
-    private static final WireMessages wireMessages = LocalizationAdapter.adapt(WireMessages.class);
-
     private volatile EventAdmin eventAdmin;
 
-    /**
-     * Binds the Event Admin Service.
-     *
-     * @param eventAdmin
-     *            the new Event Admin Service
-     */
     public void bindEventAdmin(final EventAdmin eventAdmin) {
-        if (this.eventAdmin == null) {
-            this.eventAdmin = eventAdmin;
-        }
+        this.eventAdmin = eventAdmin;
     }
 
-    /**
-     * Unbinds the Event Admin Service.
-     *
-     * @param eventAdmin
-     *            the new Event Admin Service
-     */
     public void unbindEventAdmin(final EventAdmin eventAdmin) {
-        if (this.eventAdmin == eventAdmin) {
-            this.eventAdmin = null;
-        }
+        this.eventAdmin = null;
     }
 
     /** {@inheritDoc} */
     @Override
     public String getPid(final WireComponent wireComponent) {
-        requireNonNull(wireComponent, wireMessages.wireComponentNonNull());
+        requireNonNull(wireComponent, "Wire Component cannot be null");
         final BundleContext context = FrameworkUtil.getBundle(this.getClass()).getBundleContext();
         final ServiceReference<?>[] refs = ServiceUtil.getServiceReferences(context, WireComponent.class, null);
         try {
@@ -86,7 +70,7 @@ public final class WireHelperServiceImpl implements WireHelperService {
     /** {@inheritDoc} */
     @Override
     public String getServicePid(final String wireComponentPid) {
-        requireNonNull(wireComponentPid, wireMessages.wireComponentPidNonNull());
+        requireNonNull(wireComponentPid, "Wire Component PID cannot be null");
         final BundleContext context = FrameworkUtil.getBundle(this.getClass()).getBundleContext();
         final ServiceReference<?>[] refs = ServiceUtil.getServiceReferences(context, WireComponent.class, null);
         try {
@@ -104,7 +88,7 @@ public final class WireHelperServiceImpl implements WireHelperService {
     /** {@inheritDoc} */
     @Override
     public String getServicePid(final WireComponent wireComponent) {
-        requireNonNull(wireComponent, wireMessages.wireComponentNonNull());
+        requireNonNull(wireComponent, "Wire Component cannot be null");
         final BundleContext context = FrameworkUtil.getBundle(this.getClass()).getBundleContext();
         final ServiceReference<?>[] refs = ServiceUtil.getServiceReferences(context, WireComponent.class, null);
         try {
@@ -123,7 +107,7 @@ public final class WireHelperServiceImpl implements WireHelperService {
     /** {@inheritDoc} */
     @Override
     public boolean isEmitter(final String wireComponentPid) {
-        requireNonNull(wireComponentPid, wireMessages.wireComponentPidNonNull());
+        requireNonNull(wireComponentPid, "Wire Component PID cannot be null");
         final BundleContext context = FrameworkUtil.getBundle(WireHelperServiceImpl.class).getBundleContext();
         final ServiceReference<?>[] refs = ServiceUtil.getServiceReferences(context, WireComponent.class, null);
         try {
@@ -142,7 +126,7 @@ public final class WireHelperServiceImpl implements WireHelperService {
     /** {@inheritDoc} */
     @Override
     public boolean isReceiver(final String wireComponentPid) {
-        requireNonNull(wireComponentPid, wireMessages.wireComponentPidNonNull());
+        requireNonNull(wireComponentPid, "Wire Component PID cannot be null");
         final BundleContext context = FrameworkUtil.getBundle(WireHelperServiceImpl.class).getBundleContext();
         final ServiceReference<?>[] refs = ServiceUtil.getServiceReferences(context, WireComponent.class, null);
         try {
@@ -158,9 +142,41 @@ public final class WireHelperServiceImpl implements WireHelperService {
         return false;
     }
 
+    private int getIntOrDefault(Object portCount, int defaultValue) {
+        if (portCount instanceof Integer) {
+            return (Integer) portCount;
+        }
+        return defaultValue;
+    }
+
     /** {@inheritDoc} */
     @Override
     public WireSupport newWireSupport(final WireComponent wireComponent) {
-        return new WireSupportImpl(wireComponent, this, this.eventAdmin);
+        requireNonNull(wireComponent, "Wire Component cannot be null");
+        final BundleContext context = FrameworkUtil.getBundle(this.getClass()).getBundleContext();
+        return Arrays.stream(ServiceUtil.getServiceReferences(context, WireComponent.class, null)).filter(ref -> {
+            final boolean matches = context.getService(ref) == wireComponent;
+            context.ungetService(ref);
+            return matches;
+        }).map(ref -> newWireSupport(wireComponent, ref)).findAny().orElse(null);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public WireSupport newWireSupport(final WireComponent wireComponent,
+            ServiceReference<WireComponent> wireComponentRef) {
+        if (wireComponentRef == null) {
+            return null;
+        }
+
+        final String servicePid = (String) wireComponentRef.getProperty(SERVICE_PID);
+        final String kuraServicePid = (String) wireComponentRef.getProperty(KURA_SERVICE_PID);
+        int receiverPortCount = getIntOrDefault(wireComponentRef.getProperty(RECEIVER_PORT_COUNT_PROP_NAME.value()),
+                wireComponent instanceof WireReceiver ? 1 : 0);
+        int emitterPortCount = getIntOrDefault(wireComponentRef.getProperty(EMITTER_PORT_COUNT_PROP_NAME.value()),
+                wireComponent instanceof WireEmitter ? 1 : 0);
+
+        return new WireSupportImpl(wireComponent, servicePid, kuraServicePid, this.eventAdmin, receiverPortCount,
+                emitterPortCount);
     }
 }

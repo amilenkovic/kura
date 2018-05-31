@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -11,6 +11,7 @@
  *******************************************************************************/
 package org.eclipse.kura.net.admin.monitor;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.kura.KuraException;
 import org.eclipse.kura.comm.CommURI;
+import org.eclipse.kura.core.net.AbstractNetInterface;
 import org.eclipse.kura.core.net.NetworkConfiguration;
 import org.eclipse.kura.linux.net.ConnectionInfoImpl;
 import org.eclipse.kura.linux.net.modem.SupportedSerialModemInfo;
@@ -104,7 +106,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
     private List<ModemMonitorListener> listeners;
 
-    private ExecutorService executor;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private Map<String, CellularModem> modems;
     private Map<String, InterfaceState> interfaceStatuses;
@@ -163,9 +165,6 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
         stopThread = new AtomicBoolean();
 
-        // must be initialized before trackModem() is called; risk of NPE otherwise
-        this.executor = Executors.newSingleThreadExecutor();
-
         // track currently installed modems
         try {
             this.networkConfig = this.netConfigService.getNetworkConfiguration();
@@ -190,13 +189,8 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
         stopThread.set(false);
 
         // is task already prepared?
-        if (task != null) {
+        if (task != null && !task.isDone()) {
             return task;
-        }
-
-        // is executor ready?
-        if (this.executor == null) {
-            return null;
         }
 
         task = this.executor.submit(() -> {
@@ -221,24 +215,22 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
         PppFactory.releaseAllPppServices();
         if (task != null && !task.isDone()) {
             stopThread.set(true);
-            monitorNotity();
+            monitorNotify();
             logger.debug("Cancelling ModemMonitor task ...");
             task.cancel(true);
             logger.info("ModemMonitor task cancelled? = {}", task.isDone());
             task = null;
         }
 
-        if (this.executor != null) {
-            logger.debug("Terminating ModemMonitor Thread ...");
-            this.executor.shutdownNow();
-            try {
-                this.executor.awaitTermination(THREAD_TERMINATION_TOUT, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                logger.warn("Interrupted", e);
-            }
-            logger.info("ModemMonitor Thread terminated? - {}", this.executor.isTerminated());
-            this.executor = null;
+        logger.debug("Terminating ModemMonitor Thread ...");
+        this.executor.shutdownNow();
+        try {
+            this.executor.awaitTermination(THREAD_TERMINATION_TOUT, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            logger.warn("Interrupted", e);
         }
+        logger.info("ModemMonitor Thread terminated? - {}", this.executor.isTerminated());
+
         this.serviceActivated = false;
 
         this.networkConfig = null;
@@ -278,7 +270,17 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
         } else if (topic.equals(ModemRemovedEvent.MODEM_EVENT_REMOVED_TOPIC)) {
             ModemRemovedEvent modemRemovedEvent = (ModemRemovedEvent) event;
             String usbPort = (String) modemRemovedEvent.getProperty(UsbDeviceEvent.USB_EVENT_USB_PORT_PROPERTY);
-            this.modems.remove(usbPort);
+            final CellularModem modem = this.modems.remove(usbPort);
+            if (modem != null) {
+                try {
+                    logger.debug("Releasing modem device from factory...");
+                    final CellularModemFactory factory = getCellularModemFactory(modem.getModemDevice());
+                    factory.releaseModemService(modem);
+                    logger.debug("Releasing modem device from factory...done");
+                } catch (Exception e) {
+                    logger.warn("Failed to release modem device from factory", e);
+                }
+            }
         }
     }
 
@@ -295,7 +297,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
     private NetInterfaceStatus getNetInterfaceStatus(List<NetConfig> netConfigs) {
 
         NetInterfaceStatus interfaceStatus = NetInterfaceStatus.netIPv4StatusUnknown;
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof NetConfigIP4) {
                     interfaceStatus = ((NetConfigIP4) netConfig).getStatus();
@@ -307,7 +309,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
     }
 
     private void setNetInterfaceStatus(NetInterfaceStatus netInterfaceStatus, List<NetConfig> netConfigs) {
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof NetConfigIP4) {
                     ((NetConfigIP4) netConfig).setStatus(netInterfaceStatus);
@@ -376,7 +378,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                         }
 
                         if (netInterfaceConfig != null) {
-                            newNetConfigs = getNetConfigs(netInterfaceConfig);
+                            newNetConfigs = ((AbstractNetInterface<?>) netInterfaceConfig).getNetConfigs();
                         } else {
                             if (oldNetConfigs != null && pppService != null
                                     && !ifaceName.equals(pppService.getIfaceName())) {
@@ -403,8 +405,8 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                             logger.info("new configuration for cellular modem on usb port {} netinterface {}", usbPort,
                                     ifaceName);
                             this.networkConfig = newNetworkConfig;
-
-                            if (pppService != null) {
+                            NetInterfaceStatus netInterfaceStatus = getNetInterfaceStatus(newNetConfigs);
+                            if (pppService != null && netInterfaceStatus != NetInterfaceStatus.netIPv4StatusUnmanaged) {
                                 PppState pppSt = pppService.getPppState();
                                 if (pppSt == PppState.CONNECTED || pppSt == PppState.IN_PROGRESS) {
                                     logger.info("disconnecting " + pppService.getIfaceName());
@@ -433,7 +435,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                                         if (task != null && !task.isCancelled()) {
                                             logger.info("NetworkConfigurationChangeEvent :: Cancelling monitor task");
                                             stopThread.set(true);
-                                            monitorNotity();
+                                            monitorNotify();
                                             task.cancel(true);
                                             task = null;
                                         }
@@ -444,7 +446,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
                                             submitMonitorTask();
                                         } else {
-                                            monitorNotity();
+                                            monitorNotify();
                                         }
                                     } else {
                                         logger.info("NetworkConfigurationChangeEvent :: The {} is provisioned",
@@ -482,36 +484,23 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
         return ret;
     }
 
-    private List<NetConfig> getNetConfigs(NetInterfaceConfig<? extends NetInterfaceAddressConfig> netInterfaceConfig) {
-
-        List<NetConfig> netConfigs = null;
-        if (netInterfaceConfig != null) {
-            List<? extends NetInterfaceAddressConfig> netInterfaceAddressConfigs = netInterfaceConfig
-                    .getNetInterfaceAddresses();
-            if (netInterfaceAddressConfigs != null && !netInterfaceAddressConfigs.isEmpty()) {
-                for (NetInterfaceAddressConfig netInterfaceAddressConfig : netInterfaceAddressConfigs) {
-                    netConfigs = netInterfaceAddressConfig.getConfigs();
-                }
-            }
-        }
-        return netConfigs;
-    }
-
     private ModemConfig getModemConfig(List<NetConfig> netConfigs) {
-        ModemConfig modemConfig = null;
+        ModemConfig modemConfig = new ModemConfig();
         for (NetConfig netConfig : netConfigs) {
             if (netConfig instanceof ModemConfig) {
                 modemConfig = (ModemConfig) netConfig;
+                break;
             }
         }
         return modemConfig;
     }
 
     private NetConfigIP4 getNetConfigIp4(List<NetConfig> netConfigs) {
-        NetConfigIP4 netConfigIP4 = null;
+        NetConfigIP4 netConfigIP4 = new NetConfigIP4(NetInterfaceStatus.netIPv4StatusUnknown, false);
         for (NetConfig netConfig : netConfigs) {
             if (netConfig instanceof NetConfigIP4) {
                 netConfigIP4 = (NetConfigIP4) netConfig;
+                break;
             }
         }
         return netConfigIP4;
@@ -519,7 +508,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
     private int getInterfaceNumber(List<NetConfig> netConfigs) {
         int ifaceNo = -1;
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof ModemConfig) {
                     ifaceNo = ((ModemConfig) netConfig).getPppNumber();
@@ -535,7 +524,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
     }
 
     private void setInterfaceNumber(String ifaceName, List<NetConfig> netConfigs) {
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof ModemConfig) {
                     ((ModemConfig) netConfig).setPppNumber(getInterfaceNumber(ifaceName));
@@ -548,7 +537,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
     private long getModemResetTimeoutMsec(String ifaceName, List<NetConfig> netConfigs) {
         long resetToutMsec = 0L;
 
-        if (ifaceName != null && netConfigs != null && !netConfigs.isEmpty()) {
+        if (ifaceName != null && netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof ModemConfig) {
                     resetToutMsec = ((ModemConfig) netConfig).getResetTimeout() * 60000;
@@ -561,7 +550,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
     private boolean isGpsEnabledInConfig(List<NetConfig> netConfigs) {
         boolean isGpsEnabled = false;
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (netConfig instanceof ModemConfig) {
                     isGpsEnabled = ((ModemConfig) netConfig).isGpsEnabled();
@@ -579,6 +568,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                 return;
             }
             for (Map.Entry<String, CellularModem> modemEntry : this.modems.entrySet()) {
+                boolean modemReset = false;
                 CellularModem modem = modemEntry.getValue();
                 // get signal strength only if somebody needs it
                 if (this.listeners != null && !this.listeners.isEmpty()) {
@@ -598,6 +588,12 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                 NetInterfaceStatus netInterfaceStatus = getNetInterfaceStatus(modem.getConfiguration());
                 try {
                     String ifaceName = this.networkService.getModemPppPort(modem.getModemDevice());
+                    if (netInterfaceStatus == NetInterfaceStatus.netIPv4StatusUnmanaged) {
+                        logger.warn(
+                                "The {} interface is configured not to be managed by Kura and will not be monitored.",
+                                ifaceName);
+                        continue;
+                    }
                     if (netInterfaceStatus == NetInterfaceStatus.netIPv4StatusEnabledWAN && ifaceName != null) {
                         pppService = PppFactory.obtainPppService(ifaceName, modem.getDataPort());
                         pppSt = pppService.getPppState();
@@ -647,8 +643,10 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                                         logger.error("monitor() :: Failed to disable modem GPS");
                                     }
                                     modem.reset();
+                                    PppFactory.releasePppService(ifaceName);
                                     pppSt = PppState.NOT_CONNECTED;
                                     this.resetTimerStart = System.currentTimeMillis();
+                                    modemReset = true;
                                 } else {
                                     int timeTillReset = (int) (modemResetTout - timeElapsed) / 1000;
                                     logger.info(
@@ -668,12 +666,17 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                         newInterfaceStatuses.put(ifaceName, interfaceState);
                     }
 
-                    if (modem.isGpsSupported() && isGpsEnabledInConfig(modem.getConfiguration())) {
+                    // If the modem has been reset in this iteration of the monitor,
+                    // do not immediately enable GPS to avoid concurrency issues due to asynchronous events
+                    // (possible serial port contention between the PositionService and the trackModem() method),
+                    // GPS will be eventually enabled by trackModem() or in the next iteration of the monitor.
+                    if (!modemReset && modem.isGpsSupported() && isGpsEnabledInConfig(modem.getConfiguration())) {
                         if (modem instanceof HspaCellularModem && !modem.isGpsEnabled()) {
                             modem.enableGps();
                         }
                         postModemGpsEvent(modem, true);
                     }
+
                 } catch (Exception e) {
                     logger.error("monitor() :: Exception", e);
                     if (pppService != null && pppSt != null) {
@@ -686,12 +689,8 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                         this.pppState = pppSt;
                     }
 
-                    try {
-                        if (modem.isGpsEnabled() && !disableModemGps(modem)) {
-                            logger.error("monitor() :: Failed to disable modem GPS");
-                        }
-                    } catch (KuraException e1) {
-                        logger.error("monitor() :: Exception disableModemGps", e1);
+                    if (modem.isGpsEnabled() && !disableModemGps(modem)) {
+                        logger.error("monitor() :: Failed to disable modem GPS");
                     }
 
                     try {
@@ -714,27 +713,28 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
         if (newStatuses != null) {
             // post NetworkStatusChangeEvent on current and new interfaces
-            for (String interfaceName : newStatuses.keySet()) {
+            for (Map.Entry<String, InterfaceState> newStatus : newStatuses.entrySet()) {
+                String interfaceName = newStatus.getKey();
+                InterfaceState interfaceState = newStatus.getValue();
                 if (oldStatuses != null && oldStatuses.containsKey(interfaceName)) {
-                    if (!newStatuses.get(interfaceName).equals(oldStatuses.get(interfaceName))) {
+                    if (!interfaceState.equals(oldStatuses.get(interfaceName))) {
                         logger.debug("Posting NetworkStatusChangeEvent on interface: {}", interfaceName);
-                        this.eventAdmin.postEvent(
-                                new NetworkStatusChangeEvent(interfaceName, newStatuses.get(interfaceName), null));
+                        this.eventAdmin.postEvent(new NetworkStatusChangeEvent(interfaceName, interfaceState, null));
                     }
                 } else {
                     logger.debug("Posting NetworkStatusChangeEvent on enabled interface: {}", interfaceName);
-                    this.eventAdmin.postEvent(
-                            new NetworkStatusChangeEvent(interfaceName, newStatuses.get(interfaceName), null));
+                    this.eventAdmin.postEvent(new NetworkStatusChangeEvent(interfaceName, interfaceState, null));
                 }
             }
 
             // post NetworkStatusChangeEvent on interfaces that are no longer there
             if (oldStatuses != null) {
-                for (String interfaceName : oldStatuses.keySet()) {
+                for (Map.Entry<String, InterfaceState> oldStatus : oldStatuses.entrySet()) {
+                    String interfaceName = oldStatus.getKey();
+                    InterfaceState interfaceState = oldStatus.getValue();
                     if (!newStatuses.containsKey(interfaceName)) {
                         logger.debug("Posting NetworkStatusChangeEvent on disabled interface: {}", interfaceName);
-                        this.eventAdmin.postEvent(
-                                new NetworkStatusChangeEvent(interfaceName, oldStatuses.get(interfaceName), null));
+                        this.eventAdmin.postEvent(new NetworkStatusChangeEvent(interfaceName, interfaceState, null));
                     }
                 }
             }
@@ -742,23 +742,9 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
     }
 
     private void trackModem(ModemDevice modemDevice) {
-        Class<? extends CellularModemFactory> modemFactoryClass = getModemFactoryClass(modemDevice);
-
-        if (modemFactoryClass != null) {
-            CellularModemFactory modemFactoryService = null;
+        synchronized (lock) {
             try {
-                try {
-                    Method getInstanceMethod = modemFactoryClass.getDeclaredMethod("getInstance", (Class<?>[]) null);
-                    getInstanceMethod.setAccessible(true);
-                    modemFactoryService = (CellularModemFactory) getInstanceMethod.invoke(null, (Object[]) null);
-                } catch (Exception e) {
-                    logger.error("Error calling getInstance() method on {}", modemFactoryClass.getName(), e);
-                }
-
-                // if unsuccessful in calling getInstance()
-                if (modemFactoryService == null) {
-                    modemFactoryService = modemFactoryClass.newInstance();
-                }
+                final CellularModemFactory modemFactoryService = getCellularModemFactory(modemDevice);
 
                 String platform = null;
                 if (this.systemService != null) {
@@ -789,7 +775,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                     }
 
                     if (netInterfaceConfig != null) {
-                        netConfigs = getNetConfigs(netInterfaceConfig);
+                        netConfigs = ((AbstractNetInterface<?>) netInterfaceConfig).getNetConfigs();
                         if (netConfigs != null && !netConfigs.isEmpty()) {
                             modem.setConfiguration(netConfigs);
                         }
@@ -817,7 +803,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                             if (task != null && !task.isCancelled()) {
                                 logger.info("trackModem() :: Cancelling monitor task");
                                 stopThread.set(true);
-                                monitorNotity();
+                                monitorNotify();
                                 task.cancel(true);
                                 task = null;
                             }
@@ -827,7 +813,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
                                 submitMonitorTask();
                             } else {
-                                monitorNotity();
+                                monitorNotify();
                             }
                         } else {
                             logger.info("trackModem() :: The {} is provisioned", modem.getModel());
@@ -843,6 +829,28 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
                 logger.error("trackModem() :: {}", e.getMessage(), e);
             }
         }
+    }
+
+    protected CellularModemFactory getCellularModemFactory(final ModemDevice modemDevice)
+            throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InstantiationException {
+        final Class<? extends CellularModemFactory> modemFactoryClass = getModemFactoryClass(modemDevice);
+
+        if (modemFactoryClass == null) {
+            throw new IllegalArgumentException("No ModemFactory associated with specified modemDevice");
+        }
+
+        CellularModemFactory modemFactoryService;
+
+        Method getInstanceMethod = modemFactoryClass.getDeclaredMethod("getInstance", (Class<?>[]) null);
+        getInstanceMethod.setAccessible(true);
+        modemFactoryService = (CellularModemFactory) getInstanceMethod.invoke(null, (Object[]) null);
+
+        // if unsuccessful in calling getInstance()
+        if (modemFactoryService == null) {
+            modemFactoryService = modemFactoryClass.newInstance();
+        }
+
+        return modemFactoryService;
     }
 
     protected Class<? extends CellularModemFactory> getModemFactoryClass(ModemDevice modemDevice) {
@@ -863,40 +871,38 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
 
     }
 
-    private boolean disableModemGps(CellularModem modem) throws KuraException {
+    private boolean disableModemGps(CellularModem modem) {
 
-        postModemGpsEvent(modem, false);
-
-        boolean portIsReachable = false;
-        long startTimer = System.currentTimeMillis();
-        do {
-            try {
-                Thread.sleep(3000);
-                if (modem.isPortReachable(modem.getAtPort())) {
-                    logger.debug("disableModemGps() modem is now reachable ...");
-                    portIsReachable = true;
-                    break;
-                } else {
-                    logger.debug("disableModemGps() waiting for PositionService to release serial port ...");
-                }
-            } catch (Exception e) {
-                logger.debug("disableModemGps() waiting for PositionService to release serial port ", e);
-            }
-        } while (System.currentTimeMillis() - startTimer < 20000L);
-
-        modem.disableGps();
         try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-        }
+            postModemGpsEvent(modem, false);
 
-        boolean ret = false;
-        if (portIsReachable && !modem.isGpsEnabled()) {
-            logger.error("disableModemGps() :: Modem GPS is disabled :: portIsReachable={}, modem.isGpsEnabled()={}",
-                    portIsReachable, modem.isGpsEnabled());
-            ret = true;
+            long startTimer = System.currentTimeMillis();
+            do {
+                try {
+                    Thread.sleep(3000);
+                    if (modem.isPortReachable(modem.getAtPort())) {
+                        logger.debug("disableModemGps() modem is now reachable ...");
+
+                        modem.disableGps();
+                        final boolean isGpsEnabled = modem.isGpsEnabled();
+
+                        logger.debug("disableModemGps() modem.isGpsEnabled()={} ...", isGpsEnabled);
+                        return !isGpsEnabled;
+                    } else {
+                        logger.debug("disableModemGps() waiting for PositionService to release serial port ...");
+                    }
+                } catch (Exception e) {
+                    logger.debug("disableModemGps() waiting for PositionService to release serial port ", e);
+                }
+            } while (System.currentTimeMillis() - startTimer < 20000L);
+
+            logger.error("disableModemGps() :: portIsReachable=false");
+            return false;
+
+        } catch (Exception e) {
+            logger.error("disableModemGps() :: failed due to excetpion", e);
+            return false;
         }
-        return ret;
     }
 
     private void postModemGpsEvent(CellularModem modem, boolean enabled) throws KuraException {
@@ -925,7 +931,7 @@ public class ModemMonitorServiceImpl implements ModemMonitorService, ModemManage
         }
     }
 
-    private void monitorNotity() {
+    private void monitorNotify() {
         if (stopThread != null) {
             synchronized (stopThread) {
                 stopThread.notifyAll();

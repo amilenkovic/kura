@@ -35,6 +35,7 @@ import org.eclipse.kura.type.IntegerValue;
 import org.eclipse.kura.type.LongValue;
 import org.eclipse.kura.type.StringValue;
 import org.eclipse.kura.type.TypedValue;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireRecord;
 import org.junit.Before;
@@ -61,6 +62,7 @@ public class H2DbWireRecordStoreTest {
         try {
             dependencyLatch.await(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -126,7 +128,7 @@ public class H2DbWireRecordStoreTest {
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         int count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records in the database.", startCount + 1, count);
+        assertEquals("Unexpected number of records in the database.", startCount + 1L, count);
 
         resultSet = connection.prepareStatement("SELECT * FROM " + tableName).executeQuery();
         resultSet.next();
@@ -162,7 +164,7 @@ public class H2DbWireRecordStoreTest {
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records", startCount + 5, count);
+        assertEquals("Unexpected number of records", startCount + 5L, count);
     }
 
     @Test
@@ -189,7 +191,7 @@ public class H2DbWireRecordStoreTest {
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
-            // OK
+            Thread.currentThread().interrupt();
         }
 
         ResultSet resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
@@ -205,24 +207,24 @@ public class H2DbWireRecordStoreTest {
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
-            // OK
+            Thread.currentThread().interrupt();
         }
 
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records", cleanupSize + 5, count);
+        assertEquals("Unexpected number of records", cleanupSize + 5L, count);
     }
 
-    public void bindDbstore(H2DbWireRecordStore dbstore) {
-        H2DbWireRecordStoreTest.dbstore = dbstore;
+    public void bindDbstore(WireComponent dbstore) {
+        H2DbWireRecordStoreTest.dbstore = (H2DbWireRecordStore) dbstore;
 
         synchronized (dbstoreLock) {
             dbstoreLock.notifyAll();
         }
     }
 
-    public void unbindDbstore(H2DbWireRecordStore dbstore) {
+    public void unbindDbstore(WireComponent dbstore) {
         H2DbWireRecordStoreTest.dbstore = null;
     }
 
@@ -240,7 +242,7 @@ public class H2DbWireRecordStoreTest {
         dependencyLatch.countDown();
     }
 
-    public void unbindDbSvc(H2DbService dbSvc) {
+    public void unbindDbSvc(WireComponent dbSvc) {
         H2DbWireRecordStoreTest.cfgsvc = null;
     }
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -267,7 +267,7 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
         boolean hadDhcpServerConfigIP4 = false;
         boolean hadNatConfig = false;
 
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (!netConfig.isValid()) {
                     throw new KuraException(KuraErrorCode.CONFIGURATION_ERROR,
@@ -330,147 +330,144 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
                     }
 
                     // replace existing configs
-                    List<? extends NetInterfaceAddressConfig> netInterfaceAddressConfigs = netInterfaceConfig
-                            .getNetInterfaceAddresses();
-                    if (netInterfaceAddressConfigs != null && !netInterfaceAddressConfigs.isEmpty()) {
-                        for (NetInterfaceAddressConfig netInterfaceAddressConfig : netInterfaceAddressConfigs) {
-                            List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
-                            List<NetConfig> newNetConfigs = new ArrayList<>();
-                            for (NetConfig netConfig : existingNetConfigs) {
-                                logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
-                                        netConfig);
-                                if (netConfig instanceof NetConfigIP4) {
-                                    if (netConfig4 == null) {
-                                        logger.debug("removing NetConfig4 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig4 = true;
-                                        newNetConfigs.add(netConfig4);
-                                        if (!netConfig.equals(netConfig4)) {
-                                            logger.debug("updating NetConfig4 for {}", interfaceName);
-                                            logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig4 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof NetConfig6) {
-                                    if (netConfig6 == null) {
-                                        logger.debug("removing NetConfig6 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig6 = true;
-                                        newNetConfigs.add(netConfig6);
-                                        if (!netConfig.equals(netConfig6)) {
-                                            logger.debug("updating NetConfig6 for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig6 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof DhcpServerConfigIP4) {
-                                    if (dhcpServerConfigIP4 == null) {
-                                        logger.debug("removing DhcpServerConfigIP4 for {}", interfaceName);
+                    NetInterfaceAddressConfig netInterfaceAddressConfig = netInterfaceConfig.getNetInterfaceAddresses()
+                            .get(0);
+                    if (netInterfaceAddressConfig != null) {
+                        List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
+                        List<NetConfig> newNetConfigs = new ArrayList<>();
+                        for (NetConfig netConfig : existingNetConfigs) {
+                            logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
+                                    netConfig);
+                            if (netConfig instanceof NetConfigIP4) {
+                                if (netConfig4 == null) {
+                                    logger.debug("removing NetConfig4 for {}", interfaceName);
+                                } else {
+                                    hadNetConfig4 = true;
+                                    newNetConfigs.add(netConfig4);
+                                    if (!netConfig.equals(netConfig4)) {
+                                        logger.debug("updating NetConfig4 for {}", interfaceName);
+                                        logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
                                     } else {
-                                        hadDhcpServerConfigIP4 = true;
-                                        newNetConfigs.add(dhcpServerConfigIP4);
-                                        if (!netConfig.equals(dhcpServerConfigIP4)) {
-                                            logger.debug("updating DhcpServerConfigIP4 for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug(
-                                                    "not updating DhcpServerConfigIP4 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
+                                        logger.debug("not updating NetConfig4 for {} because it is unchanged",
+                                                interfaceName);
                                     }
-                                } else if (netConfig instanceof FirewallAutoNatConfig) {
-                                    if (natConfig == null) {
-                                        logger.debug("removing FirewallAutoNatConfig for {}", interfaceName);
+                                }
+                            } else if (netConfig instanceof NetConfig6) {
+                                if (netConfig6 == null) {
+                                    logger.debug("removing NetConfig6 for {}", interfaceName);
+                                } else {
+                                    hadNetConfig6 = true;
+                                    newNetConfigs.add(netConfig6);
+                                    if (!netConfig.equals(netConfig6)) {
+                                        logger.debug("updating NetConfig6 for {}", interfaceName);
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
                                     } else {
-                                        hadNatConfig = true;
-                                        newNetConfigs.add(natConfig);
-                                        if (!netConfig.equals(natConfig)) {
-                                            logger.debug("updating FirewallAutoNatConfig for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug(
-                                                    "not updating FirewallAutoNatConfig for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
+                                        logger.debug("not updating NetConfig6 for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else if (netConfig instanceof DhcpServerConfigIP4) {
+                                if (dhcpServerConfigIP4 == null) {
+                                    logger.debug("removing DhcpServerConfigIP4 for {}", interfaceName);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
                                     }
                                 } else {
-                                    logger.debug("Found unsupported configuration: {}", netConfig.toString());
-                                }
-                            }
-
-                            // add configs that did not match any in the current configuration
-                            if (netConfigs != null && !netConfigs.isEmpty()) {
-                                for (NetConfig netConfig : netConfigs) {
-                                    if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
-                                        logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
+                                    hadDhcpServerConfigIP4 = true;
+                                    newNetConfigs.add(dhcpServerConfigIP4);
+                                    if (!netConfig.equals(dhcpServerConfigIP4)) {
+                                        logger.debug("updating DhcpServerConfigIP4 for {}", interfaceName);
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
-                                    }
-                                    if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
-                                        logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof DhcpServerConfigIP4 && !hadDhcpServerConfigIP4) {
-                                        logger.debug("adding new DhcpServerConfigIP4 to existing config for {}",
+                                    } else {
+                                        logger.debug("not updating DhcpServerConfigIP4 for {} because it is unchanged",
                                                 interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof FirewallAutoNatConfig && !hadNatConfig) {
-                                        logger.debug("adding new FirewallAutoNatConfig to existing config for {}",
-                                                interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
                                     }
                                 }
+                            } else if (netConfig instanceof FirewallAutoNatConfig) {
+                                if (natConfig == null) {
+                                    logger.debug("removing FirewallAutoNatConfig for {}", interfaceName);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                } else {
+                                    hadNatConfig = true;
+                                    newNetConfigs.add(natConfig);
+                                    if (!netConfig.equals(natConfig)) {
+                                        logger.debug("updating FirewallAutoNatConfig for {}", interfaceName);
+                                        configurationChanged = true;
+                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                            modifiedInterfaceNames.add(interfaceName);
+                                        }
+                                    } else {
+                                        logger.debug(
+                                                "not updating FirewallAutoNatConfig for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else {
+                                logger.debug("Found unsupported configuration: {}", netConfig.toString());
                             }
-
-                            for (NetConfig netConfig : newNetConfigs) {
-                                logger.debug("New NetConfig: {} :: {}", netConfig.getClass().toString(),
-                                        netConfig.toString());
-                            }
-
-                            // replace with new list
-                            ((NetInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                         }
+
+                        // add configs that did not match any in the current configuration
+                        if (netConfigs != null) {
+                            for (NetConfig netConfig : netConfigs) {
+                                if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
+                                    logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
+                                    logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof DhcpServerConfigIP4 && !hadDhcpServerConfigIP4) {
+                                    logger.debug("adding new DhcpServerConfigIP4 to existing config for {}",
+                                            interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof FirewallAutoNatConfig && !hadNatConfig) {
+                                    logger.debug("adding new FirewallAutoNatConfig to existing config for {}",
+                                            interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                            }
+                        }
+
+                        for (NetConfig netConfig : newNetConfigs) {
+                            logger.debug("New NetConfig: {} :: {}", netConfig.getClass().toString(),
+                                    netConfig.toString());
+                        }
+
+                        // replace with new list
+                        ((NetInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                     }
                 }
             }
@@ -498,7 +495,7 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
         boolean hadDhcpServerConfigIP4 = false;
         boolean hadNatConfig = false;
 
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (!netConfig.isValid()) {
                     throw new KuraException(KuraErrorCode.CONFIGURATION_ERROR,
@@ -551,189 +548,185 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
                 if (netInterfaceConfig.getName().equals(interfaceName)) {
 
                     // replace existing configs
-                    List<? extends NetInterfaceAddressConfig> netInterfaceAddressConfigs = netInterfaceConfig
-                            .getNetInterfaceAddresses();
-                    if (netInterfaceAddressConfigs != null && !netInterfaceAddressConfigs.isEmpty()) {
-                        for (NetInterfaceAddressConfig netInterfaceAddressConfig : netInterfaceAddressConfigs) {
-                            List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
-                            List<NetConfig> newNetConfigs = new ArrayList<>();
-                            WifiMode newWifiMode = wifiConfig != null ? wifiConfig.getMode() : null;
-                            for (NetConfig netConfig : existingNetConfigs) {
-                                logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
-                                        netConfig);
-                                if (netConfig instanceof NetConfigIP4) {
-                                    if (netConfig4 == null) {
-                                        logger.debug("removing NetConfig4 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig4 = true;
-                                        newNetConfigs.add(netConfig4);
-                                        if (!netConfig.equals(netConfig4)) {
-                                            logger.debug("updating NetConfig4 for {}", interfaceName);
-                                            logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig4 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof NetConfig6) {
-                                    if (netConfig6 == null) {
-                                        logger.debug("removing NetConfig6 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig6 = true;
-                                        newNetConfigs.add(netConfig6);
-                                        if (!netConfig.equals(netConfig6)) {
-                                            logger.debug("updating NetConfig6 for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig6 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof WifiConfig) {
-                                    if (wifiConfig == null) {
-                                        logger.debug("removing wifiConfig for {}", interfaceName);
-                                    } else {
-                                        // There should be one new WifiConfig, which indicates the selected mode
-                                        // but there may be multiple current wifi configs, one for each mode (infra,
-                                        // master, adhoc)
-                                        // Check the one corresponding to the newly selected mode, and automatically the
-                                        // others
-                                        if (newWifiMode.equals(((WifiConfig) netConfig).getMode())) {
-                                            hadWifiConfig = true;
-                                            newNetConfigs.add(wifiConfig);
-                                            logger.debug("checking WifiConfig for {} mode", wifiConfig.getMode());
-                                            if (!netConfig.equals(wifiConfig)) {
-                                                logger.debug("updating WifiConfig for {}", interfaceName);
-                                                configurationChanged = true;
-                                                if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                    modifiedInterfaceNames.add(interfaceName);
-                                                }
-                                            } else {
-                                                logger.debug("not updating WifiConfig for {} because it is unchanged",
-                                                        interfaceName);
-                                            }
-                                        } else {
-                                            // Keep the old WifiConfig for the non-selected wifi modes
-                                            logger.debug("adding other WifiConfig: {}", netConfig);
-                                            newNetConfigs.add(netConfig);
-                                        }
-                                    }
-                                } else if (netConfig instanceof DhcpServerConfigIP4) {
-                                    if (dhcpServerConfigIP4 == null) {
-                                        logger.debug("removing DhcpServerConfigIP4 for {}", interfaceName);
+                    NetInterfaceAddressConfig netInterfaceAddressConfig = netInterfaceConfig.getNetInterfaceAddresses()
+                            .get(0);
+                    if (netInterfaceAddressConfig != null) {
+                        List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
+                        List<NetConfig> newNetConfigs = new ArrayList<>();
+                        WifiMode newWifiMode = wifiConfig != null ? wifiConfig.getMode() : null;
+                        for (NetConfig netConfig : existingNetConfigs) {
+                            logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
+                                    netConfig);
+                            if (netConfig instanceof NetConfigIP4) {
+                                if (netConfig4 == null) {
+                                    logger.debug("removing NetConfig4 for {}", interfaceName);
+                                } else {
+                                    hadNetConfig4 = true;
+                                    newNetConfigs.add(netConfig4);
+                                    if (!netConfig.equals(netConfig4)) {
+                                        logger.debug("updating NetConfig4 for {}", interfaceName);
+                                        logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
                                     } else {
-                                        hadDhcpServerConfigIP4 = true;
-                                        newNetConfigs.add(dhcpServerConfigIP4);
-                                        if (!netConfig.equals(dhcpServerConfigIP4)) {
-                                            logger.debug("updating DhcpServerConfigIP4 for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug(
-                                                    "not updating DhcpServerConfigIP4 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
+                                        logger.debug("not updating NetConfig4 for {} because it is unchanged",
+                                                interfaceName);
                                     }
-                                } else if (netConfig instanceof FirewallAutoNatConfig) {
-                                    if (natConfig == null) {
-                                        logger.debug("removing FirewallAutoNatConfig for {}", interfaceName);
+                                }
+                            } else if (netConfig instanceof NetConfig6) {
+                                if (netConfig6 == null) {
+                                    logger.debug("removing NetConfig6 for {}", interfaceName);
+                                } else {
+                                    hadNetConfig6 = true;
+                                    newNetConfigs.add(netConfig6);
+                                    if (!netConfig.equals(netConfig6)) {
+                                        logger.debug("updating NetConfig6 for {}", interfaceName);
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
                                     } else {
-                                        hadNatConfig = true;
-                                        newNetConfigs.add(natConfig);
-                                        if (!netConfig.equals(natConfig)) {
-                                            logger.debug("updating FirewallAutoNatConfig for {}", interfaceName);
+                                        logger.debug("not updating NetConfig6 for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else if (netConfig instanceof WifiConfig) {
+                                if (wifiConfig == null) {
+                                    logger.debug("removing wifiConfig for {}", interfaceName);
+                                } else {
+                                    // There should be one new WifiConfig, which indicates the selected mode
+                                    // but there may be multiple current wifi configs, one for each mode (infra,
+                                    // master, adhoc)
+                                    // Check the one corresponding to the newly selected mode, and automatically the
+                                    // others
+                                    if (newWifiMode.equals(((WifiConfig) netConfig).getMode())) {
+                                        hadWifiConfig = true;
+                                        newNetConfigs.add(wifiConfig);
+                                        logger.debug("checking WifiConfig for {} mode", wifiConfig.getMode());
+                                        if (!netConfig.equals(wifiConfig)) {
+                                            logger.debug("updating WifiConfig for {}", interfaceName);
                                             configurationChanged = true;
                                             if (!modifiedInterfaceNames.contains(interfaceName)) {
                                                 modifiedInterfaceNames.add(interfaceName);
                                             }
                                         } else {
-                                            logger.debug(
-                                                    "not updating FirewallNatConfig for {} because it is unchanged",
+                                            logger.debug("not updating WifiConfig for {} because it is unchanged",
                                                     interfaceName);
                                         }
+                                    } else {
+                                        // Keep the old WifiConfig for the non-selected wifi modes
+                                        logger.debug("adding other WifiConfig: {}", netConfig);
+                                        newNetConfigs.add(netConfig);
+                                    }
+                                }
+                            } else if (netConfig instanceof DhcpServerConfigIP4) {
+                                if (dhcpServerConfigIP4 == null) {
+                                    logger.debug("removing DhcpServerConfigIP4 for {}", interfaceName);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
                                     }
                                 } else {
-                                    logger.debug("Found unsupported configuration: {}", netConfig.toString());
-                                }
-                            }
-
-                            // add configs that did not match any in the current configuration
-                            if (netConfigs != null && !netConfigs.isEmpty()) {
-                                for (NetConfig netConfig : netConfigs) {
-                                    if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
-                                        logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
+                                    hadDhcpServerConfigIP4 = true;
+                                    newNetConfigs.add(dhcpServerConfigIP4);
+                                    if (!netConfig.equals(dhcpServerConfigIP4)) {
+                                        logger.debug("updating DhcpServerConfigIP4 for {}", interfaceName);
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
-                                    }
-                                    if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
-                                        logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof WifiConfig && !hadWifiConfig) {
-                                        logger.debug("adding new WifiConfig to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof DhcpServerConfigIP4 && !hadDhcpServerConfigIP4) {
-                                        logger.debug("adding new DhcpServerConfigIP4 to existing config for {}",
+                                    } else {
+                                        logger.debug("not updating DhcpServerConfigIP4 for {} because it is unchanged",
                                                 interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof FirewallAutoNatConfig && !hadNatConfig) {
-                                        logger.debug("adding new FirewallAutoNatConfig to existing config for {}",
-                                                interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
                                     }
                                 }
+                            } else if (netConfig instanceof FirewallAutoNatConfig) {
+                                if (natConfig == null) {
+                                    logger.debug("removing FirewallAutoNatConfig for {}", interfaceName);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                } else {
+                                    hadNatConfig = true;
+                                    newNetConfigs.add(natConfig);
+                                    if (!netConfig.equals(natConfig)) {
+                                        logger.debug("updating FirewallAutoNatConfig for {}", interfaceName);
+                                        configurationChanged = true;
+                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                            modifiedInterfaceNames.add(interfaceName);
+                                        }
+                                    } else {
+                                        logger.debug("not updating FirewallNatConfig for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else {
+                                logger.debug("Found unsupported configuration: {}", netConfig.toString());
                             }
-
-                            // Update the wifi mode
-                            if (newWifiMode != null) {
-                                logger.debug("setting address config wifiMode to: {}", newWifiMode);
-                                ((WifiInterfaceAddressConfigImpl) netInterfaceAddressConfig).setMode(newWifiMode);
-                            }
-
-                            // replace with new list
-                            for (NetConfig netConfig : newNetConfigs) {
-                                logger.debug("Current NetConfig: {} :: {}", netConfig.getClass(), netConfig);
-                            }
-                            ((WifiInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                         }
+
+                        // add configs that did not match any in the current configuration
+                        if (netConfigs != null) {
+                            for (NetConfig netConfig : netConfigs) {
+                                if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
+                                    logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
+                                    logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof WifiConfig && !hadWifiConfig) {
+                                    logger.debug("adding new WifiConfig to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof DhcpServerConfigIP4 && !hadDhcpServerConfigIP4) {
+                                    logger.debug("adding new DhcpServerConfigIP4 to existing config for {}",
+                                            interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof FirewallAutoNatConfig && !hadNatConfig) {
+                                    logger.debug("adding new FirewallAutoNatConfig to existing config for {}",
+                                            interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update the wifi mode
+                        if (newWifiMode != null) {
+                            logger.debug("setting address config wifiMode to: {}", newWifiMode);
+                            ((WifiInterfaceAddressConfigImpl) netInterfaceAddressConfig).setMode(newWifiMode);
+                        }
+
+                        // replace with new list
+                        for (NetConfig netConfig : newNetConfigs) {
+                            logger.debug("Current NetConfig: {} :: {}", netConfig.getClass(), netConfig);
+                        }
+                        ((WifiInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                     }
                 }
             }
@@ -757,7 +750,7 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
         boolean hadNetConfig6 = false;
         boolean hadModemConfig = false;
 
-        if (netConfigs != null && !netConfigs.isEmpty()) {
+        if (netConfigs != null) {
             for (NetConfig netConfig : netConfigs) {
                 if (!netConfig.isValid()) {
                     throw new KuraException(KuraErrorCode.CONFIGURATION_ERROR,
@@ -837,109 +830,107 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
                     }
 
                     // replace existing configs
-                    List<? extends NetInterfaceAddressConfig> netInterfaceAddressConfigs = netInterfaceConfig
-                            .getNetInterfaceAddresses();
-                    if (netInterfaceAddressConfigs != null && !netInterfaceAddressConfigs.isEmpty()) {
-                        for (NetInterfaceAddressConfig netInterfaceAddressConfig : netInterfaceAddressConfigs) {
-                            List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
-                            List<NetConfig> newNetConfigs = new ArrayList<>();
-                            for (NetConfig netConfig : existingNetConfigs) {
-                                logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
-                                        netConfig);
-                                if (netConfig instanceof NetConfigIP4) {
-                                    if (netConfig4 == null) {
-                                        logger.debug("removing NetConfig4 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig4 = true;
-                                        newNetConfigs.add(netConfig4);
-                                        if (!netConfig.equals(netConfig4)) {
-                                            logger.debug("updating NetConfig4 for {}", interfaceName);
-                                            logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig4 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof NetConfig6) {
-                                    if (netConfig6 == null) {
-                                        logger.debug("removing NetConfig6 for {}", interfaceName);
-                                    } else {
-                                        hadNetConfig6 = true;
-                                        newNetConfigs.add(netConfig6);
-                                        if (!netConfig.equals(netConfig6)) {
-                                            logger.debug("updating NetConfig6 for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating NetConfig6 for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
-                                } else if (netConfig instanceof ModemConfig) {
-                                    if (modemConfig == null) {
-                                        logger.debug("removing ModemConfig for {}", interfaceName);
-                                    } else {
-                                        hadModemConfig = true;
-                                        newNetConfigs.add(modemConfig);
-                                        if (!netConfig.equals(modemConfig)) {
-                                            logger.debug("updating ModemConfig for {}", interfaceName);
-                                            configurationChanged = true;
-                                            if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                                modifiedInterfaceNames.add(interfaceName);
-                                            }
-                                        } else {
-                                            logger.debug("not updating ModemConfig for {} because it is unchanged",
-                                                    interfaceName);
-                                        }
-                                    }
+                    NetInterfaceAddressConfig netInterfaceAddressConfig = netInterfaceConfig.getNetInterfaceAddresses()
+                            .get(0);
+                    if (netInterfaceAddressConfig != null) {
+                        List<NetConfig> existingNetConfigs = netInterfaceAddressConfig.getConfigs();
+                        List<NetConfig> newNetConfigs = new ArrayList<>();
+                        for (NetConfig netConfig : existingNetConfigs) {
+                            logger.debug("looking at existing NetConfig for {} with value: {}", interfaceName,
+                                    netConfig);
+                            if (netConfig instanceof NetConfigIP4) {
+                                if (netConfig4 == null) {
+                                    logger.debug("removing NetConfig4 for {}", interfaceName);
                                 } else {
-                                    logger.debug("Found unsupported configuration: {}", netConfig.toString());
-                                }
-                            }
-
-                            // add configs that did not match any in the current configuration
-                            if (netConfigs != null && !netConfigs.isEmpty()) {
-                                for (NetConfig netConfig : netConfigs) {
-                                    if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
-                                        logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
+                                    hadNetConfig4 = true;
+                                    newNetConfigs.add(netConfig4);
+                                    if (!netConfig.equals(netConfig4)) {
+                                        logger.debug("updating NetConfig4 for {}", interfaceName);
+                                        logger.debug("Is new State DHCP? {}", netConfig4.isDhcp());
                                         configurationChanged = true;
                                         if (!modifiedInterfaceNames.contains(interfaceName)) {
                                             modifiedInterfaceNames.add(interfaceName);
                                         }
-                                    }
-                                    if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
-                                        logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
-                                    }
-                                    if (netConfig instanceof ModemConfig && !hadModemConfig) {
-                                        logger.debug("adding new ModemConfig to existing config for {}", interfaceName);
-                                        newNetConfigs.add(netConfig);
-                                        configurationChanged = true;
-                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
-                                            modifiedInterfaceNames.add(interfaceName);
-                                        }
+                                    } else {
+                                        logger.debug("not updating NetConfig4 for {} because it is unchanged",
+                                                interfaceName);
                                     }
                                 }
+                            } else if (netConfig instanceof NetConfig6) {
+                                if (netConfig6 == null) {
+                                    logger.debug("removing NetConfig6 for {}", interfaceName);
+                                } else {
+                                    hadNetConfig6 = true;
+                                    newNetConfigs.add(netConfig6);
+                                    if (!netConfig.equals(netConfig6)) {
+                                        logger.debug("updating NetConfig6 for {}", interfaceName);
+                                        configurationChanged = true;
+                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                            modifiedInterfaceNames.add(interfaceName);
+                                        }
+                                    } else {
+                                        logger.debug("not updating NetConfig6 for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else if (netConfig instanceof ModemConfig) {
+                                if (modemConfig == null) {
+                                    logger.debug("removing ModemConfig for {}", interfaceName);
+                                } else {
+                                    hadModemConfig = true;
+                                    newNetConfigs.add(modemConfig);
+                                    if (!netConfig.equals(modemConfig)) {
+                                        logger.debug("updating ModemConfig for {}", interfaceName);
+                                        configurationChanged = true;
+                                        if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                            modifiedInterfaceNames.add(interfaceName);
+                                        }
+                                    } else {
+                                        logger.debug("not updating ModemConfig for {} because it is unchanged",
+                                                interfaceName);
+                                    }
+                                }
+                            } else {
+                                logger.debug("Found unsupported configuration: {}", netConfig.toString());
                             }
-
-                            for (NetConfig netConfig : newNetConfigs) {
-                                logger.debug("Current NetConfig: {} :: {}", netConfig.getClass(), netConfig);
-                            }
-
-                            // replace with new list
-                            ((ModemInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                         }
+
+                        // add configs that did not match any in the current configuration
+                        if (netConfigs != null) {
+                            for (NetConfig netConfig : netConfigs) {
+                                if (netConfig instanceof NetConfigIP4 && !hadNetConfig4) {
+                                    logger.debug("adding new NetConfig4 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof NetConfigIP6 && !hadNetConfig6) {
+                                    logger.debug("adding new NetConfig6 to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                                if (netConfig instanceof ModemConfig && !hadModemConfig) {
+                                    logger.debug("adding new ModemConfig to existing config for {}", interfaceName);
+                                    newNetConfigs.add(netConfig);
+                                    configurationChanged = true;
+                                    if (!modifiedInterfaceNames.contains(interfaceName)) {
+                                        modifiedInterfaceNames.add(interfaceName);
+                                    }
+                                }
+                            }
+                        }
+
+                        for (NetConfig netConfig : newNetConfigs) {
+                            logger.debug("Current NetConfig: {} :: {}", netConfig.getClass(), netConfig);
+                        }
+
+                        // replace with new list
+                        ((ModemInterfaceAddressConfigImpl) netInterfaceAddressConfig).setNetConfigs(newNetConfigs);
                     }
                 }
 
@@ -956,7 +947,6 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
 
     @Override
     public void enableInterface(String interfaceName, boolean dhcp) throws KuraException {
-
         try {
             NetInterfaceType type = LinuxNetworkUtil.getType(interfaceName);
 
@@ -974,16 +964,18 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
                         wifiNetInterfaceAddressConfigs);
 
                 wifiMode = wifiInterfaceAddressConfig.getMode();
-                wifiInterfaceState = new WifiInterfaceState(interfaceName, wifiMode);
-
+                boolean isL2Only = false;
                 for (NetConfig netConfig : wifiInterfaceAddressConfig.getConfigs()) {
                     if (netConfig instanceof NetConfigIP4) {
                         status = ((NetConfigIP4) netConfig).getStatus();
+                        isL2Only = ((NetConfigIP4) netConfig).getStatus() == NetInterfaceStatus.netIPv4StatusL2Only
+                                ? true : false;
                         logger.debug("Interface status is set to {}", status);
                     } else if (netConfig instanceof WifiConfig && ((WifiConfig) netConfig).getMode() == wifiMode) {
                         wifiConfig = (WifiConfig) netConfig;
                     }
                 }
+                wifiInterfaceState = new WifiInterfaceState(interfaceName, wifiMode, isL2Only);
             }
 
             if (!LinuxNetworkUtil.hasAddress(interfaceName)
@@ -1013,7 +1005,6 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
         } catch (Exception e) {
             throw new KuraException(KuraErrorCode.INTERNAL_ERROR, e);
         }
-
     }
 
     private WifiInterfaceAddressConfig getWifiAddressConfig(
@@ -1056,30 +1047,23 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
 
     @Override
     public void disableInterface(String interfaceName) throws KuraException {
+        if ("lo".equals(interfaceName)) {
+            return;
+        }
+        manageDhcpClient(interfaceName, false);
+        manageDhcpServer(interfaceName, false);
 
-        if (!"lo".equals(interfaceName)) {
-            try {
-                if (LinuxNetworkUtil.hasAddress(interfaceName)) {
-                    logger.info("bringing interface {} down", interfaceName);
-                    manageDhcpClient(interfaceName, false);
-                    manageDhcpServer(interfaceName, false);
-
-                    // FIXME: can we avoid getting the interface type again and ask for the caller to pass it in?
-                    NetInterfaceType type = LinuxNetworkUtil.getType(interfaceName);
-                    if (type == NetInterfaceType.WIFI) {
-                        disableWifiInterface(interfaceName);
-                    }
-
-                    LinuxNetworkUtil.disableInterface(interfaceName);
-
-                } else {
-                    logger.info("not bringing interface {} down because it is already down", interfaceName);
-                    manageDhcpClient(interfaceName, false);
-                    manageDhcpServer(interfaceName, false);
-                }
-            } catch (Exception e) {
-                throw new KuraException(KuraErrorCode.INTERNAL_ERROR, e);
+        NetInterfaceType type = LinuxNetworkUtil.getType(interfaceName);
+        if (type == NetInterfaceType.WIFI) {
+            disableWifiInterface(interfaceName);
+        }
+        try {
+            if (LinuxNetworkUtil.hasAddress(interfaceName)) {
+                logger.info("bringing interface {} down", interfaceName);
+                LinuxNetworkUtil.disableInterface(interfaceName);
             }
+        } catch (Exception e) {
+            throw new KuraException(KuraErrorCode.INTERNAL_ERROR, e);
         }
     }
 
@@ -1235,12 +1219,12 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
     @Override
     public synchronized boolean verifyWifiCredentials(String ifaceName, WifiConfig wifiConfig, int tout) {
 
-        if (wifiClientMonitorServiceLock == null) {
+        if (this.wifiClientMonitorServiceLock == null) {
             return false;
         }
 
         // hack to synchronize with WifiClientMonitorService
-        synchronized (wifiClientMonitorServiceLock) {
+        synchronized (this.wifiClientMonitorServiceLock) {
             boolean ret = false;
             WpaSupplicantConfigWriter wpaSupplicantConfigWriter = WpaSupplicantConfigWriter.getInstance();
             try {
@@ -1445,7 +1429,6 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
     // TODO: simplify method signature. Probably we could take the mode from the wifiConfig.
     private void enableWifiInterface(String ifaceName, NetInterfaceStatus status, WifiMode wifiMode,
             WifiConfig wifiConfig) throws KuraException {
-
         // ignore mon.* interface
         // ignore redpine vlan interface
         if (ifaceName.startsWith("mon.") || ifaceName.startsWith("rpine")) {
@@ -1458,15 +1441,15 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
         HostapdManager.stop(ifaceName);
         WpaSupplicantManager.stop(ifaceName);
 
-        if (status == NetInterfaceStatus.netIPv4StatusEnabledLAN && wifiMode.equals(WifiMode.MASTER)) {
-
+        boolean enStatusAp = status == NetInterfaceStatus.netIPv4StatusL2Only
+                || status == NetInterfaceStatus.netIPv4StatusEnabledLAN ? true : false;
+        boolean enStatusInfra = status == NetInterfaceStatus.netIPv4StatusL2Only
+                || status == NetInterfaceStatus.netIPv4StatusEnabledLAN
+                || status == NetInterfaceStatus.netIPv4StatusEnabledWAN ? true : false;
+        if (enStatusAp && wifiMode == WifiMode.MASTER) {
             logger.debug("Starting hostapd");
             HostapdManager.start(ifaceName);
-
-        } else if ((status == NetInterfaceStatus.netIPv4StatusEnabledLAN
-                || status == NetInterfaceStatus.netIPv4StatusEnabledWAN)
-                && (wifiMode.equals(WifiMode.INFRA) || wifiMode.equals(WifiMode.ADHOC))) {
-
+        } else if (enStatusInfra && (wifiMode == WifiMode.INFRA || wifiMode == WifiMode.ADHOC)) {
             if (wifiConfig != null) {
                 logger.debug("Starting wpa_supplicant");
                 logger.warn("enableWifiInterface() :: Starting wpa_supplicant ... driver={}", wifiConfig.getDriver());
@@ -1555,9 +1538,12 @@ public class NetworkAdminServiceImpl implements NetworkAdminService, EventHandle
     }
 
     private void reloadKernelModule(String interfaceName, WifiMode wifiMode) throws KuraException {
-        logger.info("monitor() :: reload {} using kernel module for WiFi mode {}", interfaceName, wifiMode);
-        LinuxNetworkUtil.unloadKernelModule(interfaceName);
-        LinuxNetworkUtil.loadKernelModule(interfaceName, wifiMode);
+        if (!LinuxNetworkUtil.isKernelModuleLoadedForMode(interfaceName, wifiMode)) {
+            logger.info("reloadKernelModule() :: reload {} using kernel module for WiFi mode {}", interfaceName,
+                    wifiMode);
+            LinuxNetworkUtil.unloadKernelModule(interfaceName);
+            LinuxNetworkUtil.loadKernelModule(interfaceName, wifiMode);
+        }
     }
 
     private boolean isHotspotInList(int channel, String ssid, List<WifiHotspotInfo> wifiHotspotInfoList) {

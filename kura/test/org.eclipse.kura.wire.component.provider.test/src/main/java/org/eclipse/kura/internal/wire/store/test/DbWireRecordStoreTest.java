@@ -35,11 +35,11 @@ import org.eclipse.kura.type.IntegerValue;
 import org.eclipse.kura.type.LongValue;
 import org.eclipse.kura.type.StringValue;
 import org.eclipse.kura.type.TypedValue;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireRecord;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
 
 public class DbWireRecordStoreTest {
 
@@ -59,6 +59,7 @@ public class DbWireRecordStoreTest {
         try {
             dependencyLatch.await(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             e.printStackTrace();
         }
     }
@@ -114,7 +115,7 @@ public class DbWireRecordStoreTest {
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         int count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records in the database.", startCount + 1, count);
+        assertEquals("Unexpected number of records in the database.", startCount + 1L, count);
 
         resultSet = connection.prepareStatement("SELECT * FROM " + tableName).executeQuery();
         resultSet.next();
@@ -150,7 +151,7 @@ public class DbWireRecordStoreTest {
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records", startCount + 5, count);
+        assertEquals("Unexpected number of records", startCount + 5L, count);
     }
 
     @Test
@@ -177,14 +178,14 @@ public class DbWireRecordStoreTest {
             try {
                 Thread.sleep(1);
             } catch (InterruptedException e) {
-                // OK
+                Thread.currentThread().interrupt();
             }
         }
         // wait for the executor to do its duty and DB operation to finish
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
-            // OK
+            Thread.currentThread().interrupt();
         }
 
         ResultSet resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
@@ -200,28 +201,28 @@ public class DbWireRecordStoreTest {
             try {
                 Thread.sleep(1);
             } catch (InterruptedException e) {
-                // OK
+                Thread.currentThread().interrupt();
             }
         }
         // wait for the executor to do its duty and DB operation to finish
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
-            // OK
+            Thread.currentThread().interrupt();
         }
 
         resultSet = connection.prepareStatement("SELECT count(*) FROM " + tableName).executeQuery();
         resultSet.next();
         count = resultSet.getInt(1);
-        assertEquals("Unexpected number of records", cleanupSize + 5, count);
+        assertEquals("Unexpected number of records", cleanupSize + 5L, count);
     }
 
-    public void bindDbstore(DbWireRecordStore dbstore) {
+    public void bindDbstore(WireComponent dbstore) {
         System.out.println(dbstore);
-        DbWireRecordStoreTest.dbstore = dbstore;
+        DbWireRecordStoreTest.dbstore = (DbWireRecordStore) dbstore;
     }
 
-    public void unbindDbstore(DbWireRecordStore dbstore) {
+    public void unbindDbstore(WireComponent dbstore) {
         DbWireRecordStoreTest.dbstore = null;
     }
 

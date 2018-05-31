@@ -20,12 +20,12 @@
     <parent>
         <groupId>org.eclipse.kura</groupId>
         <artifactId>test</artifactId>
-        <version>3.2.0-SNAPSHOT</version>
+        <version>3.3.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>org.eclipse.kura.wire.provider.test</artifactId>
     <packaging>eclipse-test-plugin</packaging>
-    <version>3.2.0-SNAPSHOT</version>
+    <version>3.3.0-SNAPSHOT</version>
 
     <properties>
 		<kura.basedir>${project.basedir}/../..</kura.basedir>
@@ -45,7 +45,7 @@
                     <useUnlimitedThreads>true</useUnlimitedThreads>
                     <argLine>${jacocoArgs}
                         -DbuildingWithTycho=true -Dosgi.locking=none
-                        -Dequinox.ds.print=true
+                        -Dds.showtrace=true
                         -Djava.io.tmpdir=/tmp
                         -Dorg.osgi.framework.storage=/tmp/osgi/framework_storage
                         -Dosgi.clean=true

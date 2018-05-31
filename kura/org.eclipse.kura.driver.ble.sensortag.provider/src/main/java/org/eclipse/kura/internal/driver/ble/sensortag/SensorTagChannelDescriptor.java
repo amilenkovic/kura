@@ -29,12 +29,14 @@ import org.eclipse.kura.util.collection.CollectionUtil;
  * <li>sensor.name</li> denotes the BLE SensorTag sensor name
  * <li>sensortag.address</li> denotes the BLE SensorTag BD address
  * index.
+ * <li>notification.period</li> is the time interval between two notifications.
  * </ul>
  */
 public final class SensorTagChannelDescriptor implements ChannelDescriptor {
 
     private static final String SENSOR_NAME = "sensor.name";
     private static final String SENSORTAG_ADDRESS = "sensortag.address";
+    private static final String NOTIFICATION_PERIOD = "notification.period";
 
     private static void addOptions(Tad target, Enum<?>[] values) {
         final List<Option> options = target.getOption();
@@ -57,7 +59,6 @@ public final class SensorTagChannelDescriptor implements ChannelDescriptor {
         sensorName.setType(Tscalar.STRING);
         sensorName.setRequired(true);
         sensorName.setDefault("TEMP_AMBIENT");
-
         addOptions(sensorName, SensorName.values());
 
         final Tad sensorTagAddress = new Tad();
@@ -67,18 +68,31 @@ public final class SensorTagChannelDescriptor implements ChannelDescriptor {
         sensorTagAddress.setType(Tscalar.STRING);
         sensorTagAddress.setRequired(true);
         sensorTagAddress.setDefault("AA:BB:CC:DD:EE:FF");
-        elements.add(sensorTagAddress);
 
+        final Tad notificationPeriod = new Tad();
+        notificationPeriod.setName(NOTIFICATION_PERIOD);
+        notificationPeriod.setId(NOTIFICATION_PERIOD);
+        notificationPeriod.setDescription(NOTIFICATION_PERIOD);
+        notificationPeriod.setType(Tscalar.INTEGER);
+        notificationPeriod.setRequired(true);
+        notificationPeriod.setDefault("1000");
+
+        elements.add(sensorTagAddress);
         elements.add(sensorName);
+        elements.add(notificationPeriod);
         return elements;
     }
 
-    static String getsensorTagAddress(Map<String, Object> properties) {
+    static String getSensorTagAddress(Map<String, Object> properties) {
         return (String) properties.get(SENSORTAG_ADDRESS);
     }
 
     static SensorName getSensorName(Map<String, Object> properties) {
         return SensorName.valueOf((String) properties.get(SENSOR_NAME));
+    }
+
+    static int getNotificationPeriod(Map<String, Object> properties) {
+        return Integer.parseInt((String) properties.get(NOTIFICATION_PERIOD));
     }
 
 }

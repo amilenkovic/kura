@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  *   All rights reserved. This program and the accompanying materials
  *   are made available under the terms of the Eclipse Public License v1.0
@@ -38,8 +38,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.apache.felix.scr.Component;
-import org.apache.felix.scr.ScrService;
 import org.eclipse.kura.KuraErrorCode;
 import org.eclipse.kura.KuraException;
 import org.eclipse.kura.KuraPartialSuccessException;
@@ -66,20 +64,22 @@ import org.osgi.framework.ServiceReference;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.runtime.ServiceComponentRuntime;
+import org.osgi.service.component.runtime.dto.ComponentDescriptionDTO;
 
 public class ConfigurationServiceTest {
 
     @Test
-    public void testGetFactoryComponentPids() throws NoSuchFieldException {
+    public void testGetFactoryComponentPids() throws NoSuchFieldException, KuraException {
         // test that the returned PIDs are the same as in the service and that they cannot be modified
 
         String[] expectedPIDs = { "pid1", "pid2", "pid3" };
 
-        ConfigurationService cs = new ConfigurationServiceImpl();
+        ConfigurationServiceImpl cs = new ConfigurationServiceImpl();
 
-        @SuppressWarnings("unchecked")
-        Set<String> s = (Set<String>) TestUtil.getFieldValue(cs, "factoryPids");
-        s.addAll(Arrays.asList(expectedPIDs));
+        for (final String pid : expectedPIDs) {
+            cs.registerComponentOCD(pid, null, true, null);
+        }
 
         Set<String> factoryComponentPids = cs.getFactoryComponentPids();
 
@@ -352,47 +352,78 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testDeleteFactoryConfigurationNonExistingFactoryPid() throws KuraException {
-        // negative test; pid not registered
+    public void testDeleteFactoryConfigurationNonFactoryComponent()
+            throws KuraException, NoSuchFieldException, IOException, InvalidSyntaxException {
 
         ConfigurationServiceImpl cs = new ConfigurationServiceImpl();
 
         String pid = "pid";
         boolean takeSnapshot = false;
 
+        final Configuration configMock = prepareConfigForDeleteFactoryConfigTests(pid, null);
+        final ConfigurationAdmin configAdmin = prepareConfigAdminForDeleteFactoryConfigTests(configMock);
+
+        cs.setConfigurationAdmin(configAdmin);
+
         try {
             cs.deleteFactoryConfiguration(pid, takeSnapshot);
-        } catch (KuraException e) {
+        } catch (Exception e) {
             fail("Exception not expected.");
         }
+
+        verify(configMock, Mockito.times(0)).delete();
     }
 
     @Test
     public void testDeleteFactoryConfigurationNonExistingServicePid() throws KuraException, NoSuchFieldException {
-        // pid ony registered in factory pids
-
-        // The interesting thing is that factory PIDs are checked in the code, but service PIDs are not... This is
-        // because by design the service expects the service PID to exist.
+        ConfigurationServiceImpl cs = new ConfigurationServiceImpl();
+        cs.setConfigurationAdmin(mock(ConfigurationAdmin.class));
 
         String pid = "pid";
         boolean takeSnapshot = false;
 
-        ConfigurationServiceImpl cs = new ConfigurationServiceImpl();
-
-        Map<String, String> pids = (Map<String, String>) TestUtil.getFieldValue(cs, "factoryPidByPid");
-        pids.put(pid, pid);
-
         try {
             cs.deleteFactoryConfiguration(pid, takeSnapshot);
-
-            fail("PID not in service PIDs list - exception expected.");
-        } catch (NullPointerException e) {
-            // OK - always assume that service PID exists - by design
+        } catch (Exception e) {
+            fail("Exception not expected.");
         }
     }
 
+    private Configuration prepareConfigForDeleteFactoryConfigTests(final String configPid,
+            final String configFactoryPid) {
+        if (configPid == null) {
+            return null;
+        }
+
+        final Dictionary<String, Object> properties = new Hashtable<>();
+        properties.put(ConfigurationService.KURA_SERVICE_PID, configPid);
+        Configuration configMock = mock(Configuration.class);
+        if (configFactoryPid != null) {
+            properties.put(ConfigurationAdmin.SERVICE_FACTORYPID, configFactoryPid);
+            when(configMock.getFactoryPid()).thenReturn(configFactoryPid);
+        }
+
+        when(configMock.getProperties()).thenReturn(properties);
+
+        when(configMock.getPid()).thenReturn(configPid);
+
+        return configMock;
+    }
+
+    private ConfigurationAdmin prepareConfigAdminForDeleteFactoryConfigTests(Configuration config)
+            throws IOException, InvalidSyntaxException {
+        ConfigurationAdmin configAdminMock = mock(ConfigurationAdmin.class);
+
+        if (config != null) {
+            when(configAdminMock.listConfigurations(anyObject())).thenReturn(new Configuration[] { config });
+        }
+
+        return configAdminMock;
+    }
+
     @Test
-    public void testDeleteFactoryConfigurationNoSnapshot() throws KuraException, IOException, NoSuchFieldException {
+    public void testDeleteFactoryConfigurationNoSnapshot()
+            throws KuraException, IOException, NoSuchFieldException, InvalidSyntaxException {
         // positive test; pid registered in factory and service pids, configuration delete is expected, no snapshot
 
         String factoryPid = "fpid";
@@ -416,17 +447,10 @@ public class ConfigurationServiceTest {
             }
         };
 
-        Map<String, String> pids = (Map<String, String>) TestUtil.getFieldValue(cs, "factoryPidByPid");
-        pids.put(servicePid, factoryPid);
+        final Configuration configMock = prepareConfigForDeleteFactoryConfigTests(servicePid, factoryPid);
+        final ConfigurationAdmin configAdmin = prepareConfigAdminForDeleteFactoryConfigTests(configMock);
 
-        pids = (Map<String, String>) TestUtil.getFieldValue(cs, "servicePidByPid");
-        pids.put(servicePid, servicePid);
-
-        ConfigurationAdmin configAdminMock = mock(ConfigurationAdmin.class);
-        cs.setConfigurationAdmin(configAdminMock);
-
-        Configuration configMock = mock(Configuration.class);
-        when(configAdminMock.getConfiguration(servicePid, "?")).thenReturn(configMock);
+        cs.setConfigurationAdmin(configAdmin);
 
         cs.deleteFactoryConfiguration(servicePid, takeSnapshot);
 
@@ -434,7 +458,8 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testDeleteFactoryConfigurationWithSnapshot() throws KuraException, IOException, NoSuchFieldException {
+    public void testDeleteFactoryConfigurationWithSnapshot()
+            throws KuraException, IOException, NoSuchFieldException, InvalidSyntaxException {
         // positive test; pid registered in factory and service pids, configuration delete is expected, take a snapshot
 
         String factoryPid = "fpid";
@@ -458,17 +483,10 @@ public class ConfigurationServiceTest {
             }
         };
 
-        Map<String, String> pids = (Map<String, String>) TestUtil.getFieldValue(cs, "factoryPidByPid");
-        pids.put(servicePid, factoryPid);
+        final Configuration configMock = prepareConfigForDeleteFactoryConfigTests(servicePid, factoryPid);
+        final ConfigurationAdmin configAdmin = prepareConfigAdminForDeleteFactoryConfigTests(configMock);
 
-        pids = (Map<String, String>) TestUtil.getFieldValue(cs, "servicePidByPid");
-        pids.put(servicePid, servicePid);
-
-        ConfigurationAdmin configAdminMock = mock(ConfigurationAdmin.class);
-        cs.setConfigurationAdmin(configAdminMock);
-
-        Configuration configMock = mock(Configuration.class);
-        when(configAdminMock.getConfiguration(servicePid, "?")).thenReturn(configMock);
+        cs.setConfigurationAdmin(configAdmin);
 
         assertFalse("snapshot still untouched", snapshots[0]);
 
@@ -476,36 +494,6 @@ public class ConfigurationServiceTest {
 
         verify(configMock, Mockito.times(1)).delete();
         assertTrue("snapshot taken", snapshots[0]);
-    }
-
-    @Test
-    public void testDeleteFactoryConfigurationConfigurationException()
-            throws KuraException, IOException, NoSuchFieldException {
-        // negative test; pid registered in factory and service pids, configuration retrieval fails
-
-        String factoryPid = "fpid";
-        final String servicePid = "spid";
-        final boolean takeSnapshot = true;
-
-        ConfigurationServiceImpl cs = new ConfigurationServiceImpl();
-
-        Map<String, String> pids = (Map<String, String>) TestUtil.getFieldValue(cs, "factoryPidByPid");
-        pids.put(servicePid, factoryPid);
-
-        pids = (Map<String, String>) TestUtil.getFieldValue(cs, "servicePidByPid");
-        pids.put(servicePid, servicePid);
-
-        ConfigurationAdmin configAdminMock = mock(ConfigurationAdmin.class);
-        cs.setConfigurationAdmin(configAdminMock);
-
-        Throwable ioe = new IOException("test");
-        when(configAdminMock.getConfiguration(servicePid, "?")).thenThrow(ioe);
-
-        try {
-            cs.deleteFactoryConfiguration(servicePid, takeSnapshot);
-        } catch (KuraException e) {
-            assertTrue(e.getMessage().contains("Cannot delete"));
-        }
     }
 
     @Test
@@ -3093,33 +3081,27 @@ public class ConfigurationServiceTest {
         assertEquals(expect, new String(chars));
     }
 
-    private Component createMockComponent(final String pid, final String... implementedServices) {
-        final Component result = mock(Component.class);
-        when(result.getName()).thenReturn(pid);
-        when(result.getServices()).thenReturn(implementedServices);
-        return result;
-    }
+    private ComponentDescriptionDTO createMockComponent(final String pid, final String... implementedServices) {
+        final ComponentDescriptionDTO result = mock(ComponentDescriptionDTO.class);
+        result.name = pid;
+        result.serviceInterfaces = implementedServices;
 
-    private Map<String, Tocd> getOcdsMap(List<String> registeredFactories, List<Tocd> registeredOcds) {
-        final Map<String, Tocd> result = new HashMap<>();
-        for (int i = 0; i < registeredFactories.size(); i++) {
-            result.put(registeredFactories.get(i), registeredOcds.get(i));
-        }
         return result;
     }
 
     private OCDService createMockConfigurationServiceForOCDTests(List<String> registeredFactories,
-            List<Tocd> registeredOcds, List<Component> registeredComponents) throws NoSuchFieldException {
+            List<Tocd> registeredOcds, List<ComponentDescriptionDTO> registeredComponents) 
+            throws NoSuchFieldException, KuraException {
 
         assertEquals(registeredFactories.size(), registeredOcds.size());
-        ScrService scrService = mock(ScrService.class);
-        when(scrService.getComponents())
-                .thenReturn(registeredComponents.toArray(new Component[registeredComponents.size()]));
+        ServiceComponentRuntime scrService = mock(ServiceComponentRuntime.class);
+        when(scrService.getComponentDescriptionDTOs()).thenReturn(registeredComponents);
 
         final ConfigurationServiceImpl result = new ConfigurationServiceImpl();
         result.setScrService(scrService);
-        TestUtil.setFieldValue(result, "factoryPids", new HashSet<>(registeredFactories));
-        TestUtil.setFieldValue(result, "ocds", getOcdsMap(registeredFactories, registeredOcds));
+        for (int i = 0; i < registeredOcds.size(); i++) {
+            result.registerComponentOCD(registeredFactories.get(i), registeredOcds.get(i), true, null);
+        }
 
         return result;
     }
@@ -3129,7 +3111,7 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testShouldReturnEmptyFactoryOCDList() throws NoSuchFieldException {
+    public void testShouldReturnEmptyFactoryOCDList() throws NoSuchFieldException, KuraException {
         final OCDService ocdService = createMockConfigurationServiceForOCDTests(Arrays.asList(), Arrays.asList(),
                 Arrays.asList());
         final List<ComponentConfiguration> configs = ocdService.getFactoryComponentOCDs();
@@ -3137,7 +3119,7 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testGetShouldFactoryOCDList() throws NoSuchFieldException {
+    public void testShouldGetFactoryOCDList() throws NoSuchFieldException, KuraException {
         final Tocd ocd1 = mock(Tocd.class);
         final Tocd ocd2 = mock(Tocd.class);
         final Tocd ocd3 = mock(Tocd.class);
@@ -3151,7 +3133,7 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testShouldReturnNullFactoryOCD() throws NoSuchFieldException {
+    public void testShouldReturnNullFactoryOCD() throws NoSuchFieldException, KuraException {
         final OCDService ocdService = createMockConfigurationServiceForOCDTests(Arrays.asList(), Arrays.asList(),
                 Arrays.asList());
         assertNull(ocdService.getFactoryComponentOCD("bar"));
@@ -3159,7 +3141,7 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testShouldGetSingleFactoryOCD() throws NoSuchFieldException {
+    public void testShouldGetSingleFactoryOCD() throws NoSuchFieldException, KuraException {
         final Tocd ocd1 = mock(Tocd.class);
         final Tocd ocd2 = mock(Tocd.class);
         final Tocd ocd3 = mock(Tocd.class);
@@ -3173,7 +3155,7 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testShouldReturnEmptyFactoryOCDListForServiceProvider() throws NoSuchFieldException {
+    public void testShouldReturnEmptyFactoryOCDListForServiceProvider() throws NoSuchFieldException, KuraException {
         final OCDService ocdService = createMockConfigurationServiceForOCDTests(Arrays.asList(), Arrays.asList(),
                 Arrays.asList());
         assertTrue(ocdService.getServiceProviderOCDs(new Class<?>[0]).isEmpty());
@@ -3181,16 +3163,16 @@ public class ConfigurationServiceTest {
     }
 
     @Test
-    public void testShouldReturnFactoryOCDListForServiceProvider() throws NoSuchFieldException {
+    public void testShouldReturnFactoryOCDListForServiceProvider() throws NoSuchFieldException, KuraException {
         final Tocd fooOcd = mock(Tocd.class);
         final Tocd barOcd = mock(Tocd.class);
         final Tocd bazOcd = mock(Tocd.class);
         final Tocd otherOcd = mock(Tocd.class);
 
-        final Component comp1 = createMockComponent("foo", "java.lang.String", "java.lang.Integer");
-        final Component comp2 = createMockComponent("bar", "java.lang.Double", "java.lang.Long");
-        final Component comp3 = createMockComponent("baz", "java.lang.Double", "java.lang.Integer");
-        final Component comp4 = createMockComponent("other");
+        final ComponentDescriptionDTO comp1 = createMockComponent("foo", "java.lang.String", "java.lang.Integer");
+        final ComponentDescriptionDTO comp2 = createMockComponent("bar", "java.lang.Double", "java.lang.Long");
+        final ComponentDescriptionDTO comp3 = createMockComponent("baz", "java.lang.Double", "java.lang.Integer");
+        final ComponentDescriptionDTO comp4 = createMockComponent("other");
 
         final OCDService ocdService = createMockConfigurationServiceForOCDTests(
                 Arrays.asList("foo", "bar", "baz", "other"), Arrays.asList(fooOcd, barOcd, bazOcd, otherOcd),

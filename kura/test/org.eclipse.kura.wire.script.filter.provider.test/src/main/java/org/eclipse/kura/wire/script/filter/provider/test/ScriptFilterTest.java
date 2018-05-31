@@ -15,10 +15,13 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Dictionary;
 import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -28,6 +31,7 @@ import org.eclipse.kura.KuraException;
 import org.eclipse.kura.configuration.ConfigurationService;
 import org.eclipse.kura.type.StringValue;
 import org.eclipse.kura.type.TypedValue;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireRecord;
 import org.eclipse.kura.wire.WireService;
@@ -100,6 +104,11 @@ public class ScriptFilterTest {
             return null;
         }).when(wire).update(anyObject());
 
+        final Dictionary wireProperties = new Hashtable<>();
+        wireProperties.put("emitter.port", 0);
+
+        when(wire.getProperties()).thenReturn(wireProperties);
+
         Wire[] wires = { wire };
         filter.consumersConnected(wires);
 
@@ -128,32 +137,32 @@ public class ScriptFilterTest {
         verify(wire, times(1)).update(anyObject());
     }
 
-    public void bindFilter(ScriptFilter filter) {
-        ScriptFilterTest.filter = filter;
+    protected void bindFilter(WireComponent filter) {
+        ScriptFilterTest.filter = (ScriptFilter) filter;
         synchronized (filterLock) {
             filterLock.notifyAll();
         }
     }
 
-    public void unbindFilter(ScriptFilter filter) {
+    protected void unbindFilter(WireComponent filter) {
         ScriptFilterTest.filter = null;
     }
 
-    public void bindCfgSvc(ConfigurationService cfgSvc) {
+    protected void bindCfgSvc(ConfigurationService cfgSvc) {
         ScriptFilterTest.cfgsvc = cfgSvc;
         dependencyLatch.countDown();
     }
 
-    public void unbindCfgSvc(ConfigurationService cfgSvc) {
+    protected void unbindCfgSvc(ConfigurationService cfgSvc) {
         ScriptFilterTest.cfgsvc = null;
     }
 
-    public void bindWireSvc(final WireService wireSvc) {
+    protected void bindWireSvc(final WireService wireSvc) {
         ScriptFilterTest.wiresvc = wireSvc;
         dependencyLatch.countDown();
     }
 
-    public void unbindWireSvc(WireService wireSvc) {
+    protected void unbindWireSvc(WireService wireSvc) {
         ScriptFilterTest.wiresvc = null;
     }
 

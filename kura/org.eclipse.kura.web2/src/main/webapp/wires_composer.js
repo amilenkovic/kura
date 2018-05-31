@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2017, 2018 Eurotech and/or its affiliates and others
  * 
  * All rights reserved. This program and the accompanying materials are made
  * available under the terms of the Eclipse Public License v1.0 which
@@ -58,13 +58,18 @@ var WireComposer = function (element) {
 				|| typeof link.attributes.target.id == 'undefined') {
 			return 
 		}
-		var sourceCell = self.graph.getCell(link.attributes.source.id)
-		var targetCell = self.graph.getCell(link.attributes.target.id)
+		var emitterComponent = self.graph.getCell(link.attributes.source.id).attributes.wireComponent
+		var receiverComponent = self.graph.getCell(link.attributes.target.id).attributes.wireComponent
+		
+		if (!emitterComponent || !receiverComponent) {
+			return
+		}
+		
 		var wire = {
-			emitterPort: 0,
-			receiverPort: 0,
-			emitterPid: sourceCell.attributes.wireComponent.pid,
-			receiverPid: targetCell.attributes.wireComponent.pid
+			emitterPort: emitterComponent.getPortIndex(link.get('source').port, 'out'),
+			receiverPort: receiverComponent.getPortIndex(link.get('target').port, 'in'),
+			emitterPid: emitterComponent.pid,
+			receiverPid: receiverComponent.pid
 		}
 		link.attributes.wire = wire
 		if (!link.attributes.wire) {
@@ -142,31 +147,16 @@ var WireComposer = function (element) {
 		self.deselectWireComponent()
 	});
 	
-	var portHighlighter = V('circle', {
-		'r' : 14,
-		'stroke' : '#ff7e5d',
-		'stroke-width' : '6px',
-		'fill' : 'transparent',
-		'pointer-events' : 'none'
-	});
-
 	this.paper.off('cell:highlight cell:unhighlight').on({
 		'cell:highlight' : function(cellView, el, opt) {
-			var bbox = V(el).bbox(false, self.paper.viewport);
-
 			if (opt.connecting) {
-				portHighlighter.attr(bbox);
-				portHighlighter.translate(bbox.x + 10, bbox.y + 10, {
-					absolute : true
-				});
-				self.viewport.append(portHighlighter);
+				V(el.parentNode).addClass('connecting')
 			}
 		},
 
 		'cell:unhighlight' : function(cellView, el, opt) {
-
 			if (opt.connecting) {
-				portHighlighter.remove();
+				V(el.parentNode).removeClass('connecting')
 			}
 		}
 	});
@@ -200,6 +190,16 @@ WireComposer.prototype.addWireComponent = function (component) {
 	var self = this
 	var position = component.renderingProperties.position
 	
+	var inputPorts = [];
+	for (var i = 0; i < component.inputPortCount; i++) { 
+		inputPorts.push(component.getPortName(i, 'in'));
+	}
+	
+	var outputPorts = [];
+	for (var j = 0; j < component.outputPortCount; j++) { 
+		outputPorts.push(component.getPortName(j, 'out'));
+	}
+	
 	if (!position) {
 		position = this.getNewComponentCoords()
 		component.renderingProperties.position = position
@@ -219,11 +219,11 @@ WireComposer.prototype.addWireComponent = function (component) {
 				'clip-path': 'url(#component-clip)'
 			}
 		},
-		inPorts : component.inputPortCount > 0 ? [""] : [],
-		outPorts : component.outputPortCount > 0 ? [""] : [],
+		inPorts : inputPorts,
+		outPorts : outputPorts,
 		wireComponent: component
 	})
-
+	
 	componentCell.on('change:position', function(cellView) {
 		self.fillRenderingProperties(cellView)
 		self.dispatchWireComponentChanged(component)
@@ -234,6 +234,9 @@ WireComposer.prototype.addWireComponent = function (component) {
 	}
 	
 	this.graph.addCells([ componentCell ])
+	
+	component.v = this.paper.findViewByModel(componentCell).vel
+	
 	this.dispatchWireComponentCreated(component)
 }
 
@@ -277,10 +280,12 @@ WireComposer.prototype.addWire = function (wire) {
 	if (emitter != null && receiver != null) {
 		var link = new joint.shapes.customLink.Element({
 			source : {
-				id : emitter.id
+				id : emitter.id,
+				port : emitter.attributes.wireComponent.getPortName(wire.emitterPort, 'out')
 			},
 			target : {
-				id : receiver.id
+				id : receiver.id,
+				port : receiver.attributes.wireComponent.getPortName(wire.receiverPort, 'in')
 			},
 			wire: wire
 		});
@@ -495,6 +500,47 @@ WireComposer.prototype.setListener = function (listener) {
 
 WireComposer.prototype.fillRenderingProperties = function (componentCell) {
 	componentCell.attributes.wireComponent.renderingProperties.position = componentCell.attributes.position
+}
+
+var WireComponent = function () {
+	this.renderingProperties = {}
+}
+
+WireComponent.prototype.portNameRegex = /(in|out)(\d+)/
+
+WireComponent.prototype.getPortIndex = function (portName, direction) {
+	var portNames = direction === 'in' ? this.renderingProperties.inputPortNames : this.renderingProperties.outputPortNames
+	if (portNames) {
+		for (var p in portNames) {
+			if (portNames[p] === portName) {
+				return parseInt(p)
+			}
+		}
+	}
+
+	return parseInt(this.portNameRegex.exec(portName)[2])
+}
+
+WireComponent.prototype.setValid = function (isValid) {
+	if (!this.v) {
+		return
+	}
+
+	if (isValid) {
+		this.v.removeClass('invalid')
+	} else {
+		this.v.addClass('invalid')
+	}
+}
+
+WireComponent.prototype.getPortName = function (portIndex, direction) {
+	var portNames = direction === 'in' ? this.renderingProperties.inputPortNames : this.renderingProperties.outputPortNames
+	var result
+	if (portNames) {
+		result = portNames[portIndex]
+	}
+
+	return result ? result : direction + portIndex
 }
 
 var Scroller = function () {

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2017, 2018 Eurotech and/or its affiliates and others
  *
  *   All rights reserved. This program and the accompanying materials
  *   are made available under the terms of the Eclipse Public License v1.0
@@ -47,9 +47,6 @@ import org.eclipse.milo.opcua.stack.core.application.CertificateValidator;
 import org.eclipse.milo.opcua.stack.core.application.DefaultCertificateManager;
 import org.eclipse.milo.opcua.stack.core.application.DefaultCertificateValidator;
 import org.eclipse.milo.opcua.stack.core.types.builtin.LocalizedText;
-import org.eclipse.milo.opcua.stack.core.types.structured.ResponseHeader;
-import org.eclipse.milo.opcua.stack.core.types.structured.TestStackRequest;
-import org.eclipse.milo.opcua.stack.core.types.structured.TestStackResponse;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -74,6 +71,7 @@ public class OpcUaDriverTest {
             boolean ok = dependencyLatch.await(10, TimeUnit.SECONDS);
             assertTrue(ok);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             fail("Dependencies should have been injected.");
         }
     }
@@ -82,23 +80,19 @@ public class OpcUaDriverTest {
         CertificateManager certificateManager = new DefaultCertificateManager();
         CertificateValidator certificateValidator = new DefaultCertificateValidator(new File("/tmp"));
         List<String> bindAddresses = new ArrayList<>();
-        bindAddresses.add("0.0.0.0");
+        bindAddresses.add("localhost");
+        List<String> endpointAddresses = new ArrayList<>();
+        endpointAddresses.add("localhost");
         OpcUaServerConfig config = new OpcUaServerConfigBuilder().setBindPort(12685).setApplicationUri("opcsvr")
-                .setBindAddresses(bindAddresses).setServerName("opcsvr")
+                .setBindAddresses(bindAddresses)
+                .setEndpointAddresses(endpointAddresses)
+                .setServerName("opcsvr")
                 .setApplicationName(LocalizedText.english("opcsvr")).setCertificateManager(certificateManager)
                 .setCertificateValidator(certificateValidator)
                 .setUserTokenPolicies(Arrays.asList(OpcUaServerConfig.USER_TOKEN_POLICY_ANONYMOUS)).build();
         server = new OpcUaServer(config);
         server.getNamespaceManager().registerAndAdd(TestNamespace.NAMESPACE_URI, idx -> new TestNamespace(server, idx));
         server.startup();
-
-        server.getServer().addRequestHandler(TestStackRequest.class, service -> {
-            TestStackRequest request = service.getRequest();
-
-            ResponseHeader header = service.createResponseHeader();
-
-            service.setResponse(new TestStackResponse(header, request.getInput()));
-        });
     }
 
     @AfterClass
@@ -199,6 +193,7 @@ public class OpcUaDriverTest {
         channelConfig.put("node.id.type", "STRING");
         channelConfig.put("opcua.type", VariableType.DEFINED_BY_JAVA_TYPE.name());
         channelConfig.put("node.id", nodeId);
+        channelConfig.put("attribute", "Value");
         record.setChannelConfig(channelConfig);
         return record;
     }
@@ -210,6 +205,7 @@ public class OpcUaDriverTest {
         channelConfig.put("node.id.type", "STRING");
         channelConfig.put("opcua.type", opcuaType.name());
         channelConfig.put("node.id", nodeId);
+        channelConfig.put("attribute", "Value");
         record.setChannelConfig(channelConfig);
         return record;
     }
@@ -436,7 +432,7 @@ public class OpcUaDriverTest {
         OpcUaDriverTest.cfgsvc = null;
     }
 
-    public void bindDriver(Driver driver) {
+    protected void bindDriver(Driver driver) {
         OpcUaDriverTest.driver = driver;
 
         synchronized (driverLock) {
@@ -444,7 +440,7 @@ public class OpcUaDriverTest {
         }
     }
 
-    public void unbindDriver(Driver driver) {
+    protected void unbindDriver(Driver driver) {
         OpcUaDriverTest.driver = null;
     }
 

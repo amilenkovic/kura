@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -33,16 +33,16 @@ import java.util.Map;
 import org.eclipse.kura.configuration.ConfigurableComponent;
 import org.eclipse.kura.db.DbService;
 import org.eclipse.kura.internal.wire.common.DbServiceHelper;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
 import org.eclipse.kura.type.TypedValue;
 import org.eclipse.kura.type.TypedValues;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEmitter;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireHelperService;
 import org.eclipse.kura.wire.WireReceiver;
 import org.eclipse.kura.wire.WireRecord;
 import org.eclipse.kura.wire.WireSupport;
+import org.osgi.framework.ServiceReference;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.wireadmin.Wire;
 import org.slf4j.Logger;
@@ -56,8 +56,6 @@ import org.slf4j.LoggerFactory;
 public final class DbWireRecordFilter implements WireEmitter, WireReceiver, ConfigurableComponent {
 
     private static final Logger logger = LoggerFactory.getLogger(DbWireRecordFilter.class);
-
-    private static final WireMessages message = LocalizationAdapter.adapt(WireMessages.class);
 
     private List<WireRecord> lastRecords;
 
@@ -132,17 +130,18 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
      *            the properties
      */
     protected void activate(final ComponentContext componentContext, final Map<String, Object> properties) {
-        logger.debug(message.activatingFilter());
+        logger.debug("Activating DB Wire Record Filter...");
         this.options = new DbWireRecordFilterOptions(properties);
         this.dbHelper = DbServiceHelper.of(this.dbService);
-        this.wireSupport = this.wireHelperService.newWireSupport(this);
+        this.wireSupport = this.wireHelperService.newWireSupport(this,
+                (ServiceReference<WireComponent>) componentContext.getServiceReference());
         this.cacheExpirationInterval = this.options.getCacheExpirationInterval();
 
         // Initialize the lastRefreshTime and remove the cacheExpirationInterval in order to immediately have the cache
         // expired
         this.lastRefreshedTime = Calendar.getInstance();
         this.lastRefreshedTime.add(Calendar.SECOND, -this.cacheExpirationInterval);
-        logger.debug(message.activatingFilterDone());
+        logger.debug("Activating DB Wire Record Filter...Done");
     }
 
     /**
@@ -152,7 +151,7 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
      *            the updated properties
      */
     public void updated(final Map<String, Object> properties) {
-        logger.debug(message.updatingFilter() + properties);
+        logger.debug("Updating DB Wire Record Filter... {}", properties);
         this.options = new DbWireRecordFilterOptions(properties);
         this.cacheExpirationInterval = this.options.getCacheExpirationInterval();
 
@@ -160,7 +159,7 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
         // expired
         this.lastRefreshedTime = Calendar.getInstance();
         this.lastRefreshedTime.add(Calendar.SECOND, -this.cacheExpirationInterval);
-        logger.debug(message.updatingFilterDone());
+        logger.debug("Updating DB Wire Record Filter...Done");
     }
 
     /**
@@ -170,9 +169,8 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
      *            the component context
      */
     protected void deactivate(final ComponentContext componentContext) {
-        logger.debug(message.deactivatingFilter());
-
-        logger.debug(message.deactivatingFilterDone());
+        logger.debug("Dectivating DB Wire Record Filter...");
+        logger.debug("Dectivating DB Wire Record Filter...Done");
     }
 
     /** {@inheritDoc} */
@@ -198,7 +196,7 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
                 dataRecords.add(wireRecord);
             }
 
-            logger.debug(message.refreshed());
+            logger.debug("Refreshed typed values");
         } catch (final SQLException e) {
             throw e;
         } finally {
@@ -247,8 +245,8 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
      */
     @Override
     public void onWireReceive(final WireEnvelope wireEnvelope) {
-        requireNonNull(wireEnvelope, message.wireEnvelopeNonNull());
-        logger.debug(message.wireEnvelopeReceived(), wireEnvelope);
+        requireNonNull(wireEnvelope, "Wire Envelope cannot be null");
+
         if (isCacheExpired()) {
             refreshCachedRecords();
         }
@@ -270,7 +268,7 @@ public final class DbWireRecordFilter implements WireEmitter, WireReceiver, Conf
                 this.lastRefreshedTime = Calendar.getInstance(this.lastRefreshedTime.getTimeZone());
             }
         } catch (SQLException e) {
-            logger.error(message.errorFiltering(), e);
+            logger.error("Error while filtering Wire Records...", e);
         }
     }
 

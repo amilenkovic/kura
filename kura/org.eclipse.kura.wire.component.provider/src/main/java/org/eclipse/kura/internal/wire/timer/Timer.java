@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -21,12 +21,12 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.kura.configuration.ConfigurableComponent;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEmitter;
 import org.eclipse.kura.wire.WireHelperService;
 import org.eclipse.kura.wire.WireRecord;
 import org.eclipse.kura.wire.WireSupport;
+import org.osgi.framework.ServiceReference;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.wireadmin.Wire;
 import org.quartz.CronScheduleBuilder;
@@ -55,8 +55,6 @@ public class Timer implements WireEmitter, ConfigurableComponent {
     private static AtomicInteger nextJobId = new AtomicInteger(0);
 
     private static final Logger logger = LoggerFactory.getLogger(Timer.class);
-
-    private static final WireMessages message = LocalizationAdapter.adapt(WireMessages.class);
 
     /** Job Key for Quartz Scheduling */
     private JobKey jobKey;
@@ -103,16 +101,17 @@ public class Timer implements WireEmitter, ConfigurableComponent {
      *            the configured properties
      */
     protected void activate(final ComponentContext ctx, final Map<String, Object> properties) {
-        logger.debug(message.activatingTimer());
+        logger.debug("Activating Timer...");
         instanceCount.incrementAndGet();
-        this.wireSupport = this.wireHelperService.newWireSupport(this);
+        this.wireSupport = this.wireHelperService.newWireSupport(this,
+                (ServiceReference<WireComponent>) ctx.getServiceReference());
         this.timerOptions = new TimerOptions(properties);
         try {
             doUpdate();
         } catch (final SchedulerException e) {
-            logger.error(message.schedulerException(), e);
+            logger.error("Scheduler exception.", e);
         }
-        logger.debug(message.activatingTimerDone());
+        logger.debug("Activating Timer... Done");
     }
 
     /**
@@ -122,14 +121,14 @@ public class Timer implements WireEmitter, ConfigurableComponent {
      *            the updated properties
      */
     protected void updated(final Map<String, Object> properties) {
-        logger.debug(message.updatingTimer());
+        logger.debug("Updating Timer...");
         this.timerOptions = new TimerOptions(properties);
         try {
             doUpdate();
         } catch (final SchedulerException e) {
-            logger.error(message.schedulerException(), e);
+            logger.error("Scheduler exception.", e);
         }
-        logger.debug(message.updatingTimerDone());
+        logger.debug("Updating Timer... Done");
     }
 
     /**
@@ -139,21 +138,21 @@ public class Timer implements WireEmitter, ConfigurableComponent {
      *            the component context
      */
     protected void deactivate(final ComponentContext ctx) {
-        logger.debug(message.deactivatingTimer());
+        logger.debug("Dectivating Timer...");
 
         try {
             if (nonNull(this.jobKey)) {
                 getScheduler().deleteJob(this.jobKey);
             }
         } catch (final SchedulerException e) {
-            logger.error(message.schedulerException(), e);
+            logger.error("Scheduler exception.", e);
         } finally {
             if (instanceCount.decrementAndGet() == 0) {
                 shutdownScheduler();
             }
         }
 
-        logger.debug(message.deactivatingTimerDone());
+        logger.debug("Dectivating Timer... Done");
     }
 
     protected Scheduler getScheduler() throws SchedulerException {
@@ -172,7 +171,7 @@ public class Timer implements WireEmitter, ConfigurableComponent {
                 try {
                     scheduler.shutdown();
                 } catch (SchedulerException e) {
-                    logger.warn(message.schedulerException(), e);
+                    logger.warn("Scheduler exception.", e);
                 }
                 scheduler = null;
             }
@@ -208,7 +207,7 @@ public class Timer implements WireEmitter, ConfigurableComponent {
      */
     private void scheduleSimpleInterval(final long interval) throws SchedulerException {
         if (interval <= 0) {
-            throw new IllegalArgumentException(message.intervalNonLessThanEqualToZero());
+            throw new IllegalArgumentException("Interval cannot be less than or equal to zero");
         }
         final Scheduler scheduler = getScheduler();
 
@@ -240,7 +239,7 @@ public class Timer implements WireEmitter, ConfigurableComponent {
      *             if the argument is null
      */
     private void scheduleCronInterval(final String expression) throws SchedulerException {
-        requireNonNull(expression, message.cronExpressionNonNull());
+        requireNonNull(expression, "Cron Expression cannot be null");
         final Scheduler scheduler = getScheduler();
 
         final int id = nextJobId.incrementAndGet();

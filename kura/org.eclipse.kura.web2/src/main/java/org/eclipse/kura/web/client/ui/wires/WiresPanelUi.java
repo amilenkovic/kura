@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -9,6 +9,7 @@
  * Contributors:
  *  Eurotech
  *  Amit Kumar Mondal
+ *  Red Hat Inc
  *
  *******************************************************************************/
 package org.eclipse.kura.web.client.ui.wires;
@@ -16,10 +17,8 @@ package org.eclipse.kura.web.client.ui.wires;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 
 import org.eclipse.kura.web.client.configuration.Configurations;
@@ -28,22 +27,26 @@ import org.eclipse.kura.web.client.messages.Messages;
 import org.eclipse.kura.web.client.ui.AlertDialog;
 import org.eclipse.kura.web.client.ui.wires.composer.BlinkEffect;
 import org.eclipse.kura.web.client.ui.wires.composer.DropEvent;
+import org.eclipse.kura.web.client.ui.wires.composer.PortNames;
 import org.eclipse.kura.web.client.ui.wires.composer.Wire;
 import org.eclipse.kura.web.client.ui.wires.composer.WireComponent;
 import org.eclipse.kura.web.client.ui.wires.composer.WireComposer;
 import org.eclipse.kura.web.shared.AssetConstants;
+import org.eclipse.kura.web.shared.IdHelper;
 import org.eclipse.kura.web.shared.model.GwtConfigComponent;
 import org.eclipse.kura.web.shared.model.GwtWireComponentConfiguration;
 import org.eclipse.kura.web.shared.model.GwtWireComponentDescriptor;
 import org.eclipse.kura.web.shared.model.GwtWireComposerStaticInfo;
 import org.eclipse.kura.web.shared.model.GwtWireConfiguration;
 import org.eclipse.kura.web.shared.model.GwtWireGraphConfiguration;
+import org.gwtbootstrap3.client.ui.Alert;
 import org.gwtbootstrap3.client.ui.Button;
 import org.gwtbootstrap3.client.ui.NavPills;
 import org.gwtbootstrap3.client.ui.Panel;
 import org.gwtbootstrap3.client.ui.PanelBody;
 import org.gwtbootstrap3.client.ui.PanelHeader;
 import org.gwtbootstrap3.client.ui.Row;
+import org.gwtbootstrap3.client.ui.constants.AlertType;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.dom.client.ClickEvent;
@@ -63,7 +66,6 @@ public class WiresPanelUi extends Composite
 
     static final String WIRE_ASSET = "WireAsset";
     static final String FACTORY_PID_DROP_PREFIX = "factory://";
-    private static final String ASSET_DESCRIPTION_PROP = "asset.desc";
     private static final String WIRE_ASSET_PID = "org.eclipse.kura.wire.WireAsset";
     private static final String DRIVER_PID = "driver.pid";
 
@@ -71,6 +73,8 @@ public class WiresPanelUi extends Composite
     Button btnSave;
     @UiField
     Button btnReset;
+    @UiField
+    Button btnDownload;
     @UiField
     Button btnZoomIn;
     @UiField
@@ -107,17 +111,6 @@ public class WiresPanelUi extends Composite
     interface WiresPanelUiUiBinder extends UiBinder<Widget, WiresPanelUi> {
     }
 
-    private List<String> components;
-    private final Map<String, GwtConfigComponent> configs = new HashMap<>();
-    private final List<String> drivers;
-    private final List<String> emitters;
-
-    private String graph;
-    private final List<String> receivers;
-    private String wireComponentsConfigJson;
-    private String wireConfigsJson;
-    private String wires;
-
     private WireComposer wireComposer;
     private BlinkEffect blinkEffect;
 
@@ -126,10 +119,6 @@ public class WiresPanelUi extends Composite
 
     public WiresPanelUi() {
         initWidget(uiBinder.createAndBindUi(this));
-        this.emitters = new ArrayList<>();
-        this.receivers = new ArrayList<>();
-        this.components = new ArrayList<>();
-        this.drivers = new ArrayList<>();
 
         this.wireComposer = WireComposer.create(composer.getElement());
         this.wireComposer.setListener(this);
@@ -169,7 +158,7 @@ public class WiresPanelUi extends Composite
                 final List<String> invalidConfigurationPids = configurations.getInvalidConfigurationPids();
                 if (!invalidConfigurationPids.isEmpty()) {
                     confirmDialog.show(
-                            MSGS.wiresConfigurationInvalid(
+                            MSGS.cannotSaveWiresConfigurationInvalid(
                                     invalidConfigurationPids.toString().replaceAll("[\\[\\]]", "")),
                             AlertDialog.Severity.ALERT, null);
                     return;
@@ -233,6 +222,21 @@ public class WiresPanelUi extends Composite
                 });
             }
         });
+        this.btnDownload.addClickHandler(new ClickHandler() {
+
+            @Override
+            public void onClick(ClickEvent event) {
+                final List<String> invalidConfigurationPids = configurations.getInvalidConfigurationPids();
+                if (!invalidConfigurationPids.isEmpty()) {
+                    confirmDialog.show(
+                            MSGS.cannotDownloadSnapshotWiresConfigurationInvalid(
+                                    invalidConfigurationPids.toString().replaceAll("[\\[\\]]", "")),
+                            AlertDialog.Severity.ALERT, null);
+                    return;
+                }
+                WiresRPC.downloadWiresSnapshot();
+            }
+        });
     }
 
     public boolean isDirty() {
@@ -289,9 +293,8 @@ public class WiresPanelUi extends Composite
         });
 
         for (GwtWireComponentDescriptor descriptor : sortedDescriptors) {
-            final WireComponentsAnchorListItem item = new WireComponentsAnchorListItem(
-                    getFormattedPid(descriptor.getFactoryPid()), descriptor.getFactoryPid(),
-                    descriptor.getMinInputPorts() > 0, descriptor.getMinOutputPorts() > 0);
+            final WireComponentsAnchorListItem item = new WireComponentsAnchorListItem(getComponentLabel(descriptor),
+                    descriptor.getFactoryPid(), descriptor.getMinInputPorts() > 0, descriptor.getMinOutputPorts() > 0);
             item.setListener(listener);
             this.wireComponentsMenu.add(item);
         }
@@ -312,7 +315,15 @@ public class WiresPanelUi extends Composite
 
         for (GwtWireComponentConfiguration config : configuration.getWireComponentConfigurations()) {
             configurationList.add(config.getConfiguration());
-            wireComposer.addWireComponent(WireComponent.fromGwt(config));
+            final WireComponent component = WireComponent.fromGwt(config);
+            final GwtWireComponentDescriptor descriptor = descriptors.getDescriptor(component.getFactoryPid());
+            // TODO: place port names in GwtWireComponentConfiguration
+            if (descriptor != null) {
+                component.getRenderingProperties().setInputPortNames(PortNames.fromMap(descriptor.getInputPortNames()));
+                component.getRenderingProperties()
+                        .setOutputPortNames(PortNames.fromMap(descriptor.getOutputPortNames()));
+            }
+            wireComposer.addWireComponent(component);
         }
 
         for (GwtWireConfiguration config : configuration.getWires()) {
@@ -321,6 +332,15 @@ public class WiresPanelUi extends Composite
 
         configurationList.addAll(configuration.getAdditionalConfigurations());
         configurations.setComponentConfigurations(configurationList);
+
+        for (final WireComponent component : this.wireComposer.getWireComponents()) {
+            try {
+                validateAndGetWireComponentConfiguration(component.getPid());
+                component.setValid(true);
+            } catch (Exception e) {
+                component.setValid(false);
+            }
+        }
 
         wireComposer.fitContent(false);
     }
@@ -360,42 +380,46 @@ public class WiresPanelUi extends Composite
         return result;
     }
 
-    public void showConfigurationArea(HasConfiguration configuration) {
-
+    private void clearConfigurationArea() {
         Window.scrollTo(0, 0);
         this.configurationRow.setVisible(false);
         this.configurationRow.clear();
+    }
+
+    private void showConfigurationArea(final Widget content) {
+        this.configurationRow.add(content);
+        this.configurationRow.setVisible(true);
+    }
+
+    public void showConfigurationArea(HasConfiguration configuration) {
+
+        clearConfigurationArea();
 
         final ConfigurationAreaUi configurationAreaUi = new ConfigurationAreaUi(configuration, this.configurations);
         configurationAreaUi.setListener(this);
 
-        this.configurationRow.add(configurationAreaUi);
-        this.configurationRow.setVisible(true);
+        showConfigurationArea(configurationAreaUi);
     }
 
-    public static String getFormattedPid(final String pid) {
-        String[] split;
-        if (pid.contains(".")) {
-            split = pid.split("\\.");
-            final String lastString = split[split.length - 1];
-            if ("WireAsset".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentAsset();
-            } else if ("CloudPublisher".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentPublisher();
-            } else if ("CloudSubscriber".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentSubscriber();
-            } else if ("DbWireRecordStore".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentDBStore();
-            } else if ("DbWireRecordFilter".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentDBFilter();
-            } else if ("H2DbWireRecordStore".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentH2DBStore();
-            } else if ("H2DbWireRecordFilter".equalsIgnoreCase(lastString)) {
-                return MSGS.wiresComponentH2DBFilter();
-            }
-            return lastString;
+    public void showConfigurationErrorMessage(String message) {
+
+        clearConfigurationArea();
+        showConfigurationArea(new Alert(message, AlertType.DANGER));
+
+    }
+
+    public static String getComponentLabel(final GwtConfigComponent config) {
+        if (config.getComponentName() != null) {
+            return config.getComponentName();
         }
-        return pid;
+        return IdHelper.getLastIdComponent(config.getFactoryId());
+    }
+
+    public static String getComponentLabel(final GwtWireComponentDescriptor descriptor) {
+        if (descriptor.getName() != null) {
+            return descriptor.getName();
+        }
+        return IdHelper.getLastIdComponent(descriptor.getFactoryPid());
     }
 
     private WireComponent createAsset(String pid, String driverPid) {
@@ -442,6 +466,7 @@ public class WiresPanelUi extends Composite
         final boolean isDirty = isDirty();
         this.btnSave.setEnabled(isDirty);
         this.btnReset.setEnabled(isDirty);
+        this.btnDownload.setEnabled(!isDirty);
     }
 
     public void unload() {
@@ -458,6 +483,34 @@ public class WiresPanelUi extends Composite
             }
         }
         return assetPids;
+    }
+
+    private HasConfiguration validateAndGetWireComponentConfiguration(String pid) {
+        try {
+            final HasConfiguration configuration = configurations.getConfiguration(pid);
+            if (configuration == null) {
+                throw new IllegalArgumentException(MSGS.errorComponentConfigurationMissing(pid));
+            }
+            GwtConfigComponent gwtConfig = configuration.getConfiguration();
+            if (gwtConfig == null || !gwtConfig.isValid()) {
+                throw new IllegalArgumentException(MSGS.errorComponentConfigurationMissing(pid));
+            }
+            if (WIRE_ASSET_PID.equals(gwtConfig.getFactoryId())) {
+                final String driverPid = (String) gwtConfig.getParameterValue(DRIVER_PID);
+                if (configurations.getConfiguration(driverPid) == null) {
+                    throw new IllegalArgumentException(MSGS.errorDriverConfigurationMissing(pid, driverPid));
+                }
+                if (configurations.getChannelDescriptor(driverPid) == null) {
+                    throw new IllegalArgumentException(MSGS.errorDriverDescriptorMissingForAsset(pid, driverPid));
+                }
+            }
+            return configuration;
+        } catch (IllegalArgumentException e) {
+            configurations.invalidateConfiguration(pid);
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(MSGS.errorUnexpectedErrorLoadingComponentConfig(pid));
+        }
     }
 
     @Override
@@ -477,10 +530,11 @@ public class WiresPanelUi extends Composite
 
     @Override
     public void onWireComponentSelected(WireComponent component) {
-        this.btnDelete.setEnabled(true);
-        final HasConfiguration configuration = configurations.getConfiguration(component.getPid());
-        if (configuration != null) {
-            showConfigurationArea(configuration);
+        try {
+            this.btnDelete.setEnabled(true);
+            showConfigurationArea(validateAndGetWireComponentConfiguration(component.getPid()));
+        } catch (Exception e) {
+            showConfigurationErrorMessage(e.getMessage());
         }
     }
 
@@ -564,6 +618,7 @@ public class WiresPanelUi extends Composite
 
     @Override
     public void onDirtyStateChanged(HasConfiguration hasConfiguration) {
+        updateDirtyState();
     }
 
 }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2016 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -21,6 +21,7 @@ import java.util.Set;
 
 import org.eclipse.kura.KuraErrorCode;
 import org.eclipse.kura.KuraException;
+import org.eclipse.kura.core.net.AbstractNetInterface;
 import org.eclipse.kura.core.net.NetworkConfiguration;
 import org.eclipse.kura.core.net.NetworkConfigurationVisitor;
 import org.eclipse.kura.core.net.modem.ModemInterfaceConfigImpl;
@@ -43,7 +44,6 @@ import org.eclipse.kura.net.admin.util.LinuxFileUtil;
 import org.eclipse.kura.net.admin.visitor.linux.util.KuranetConfig;
 import org.eclipse.kura.net.admin.visitor.linux.util.ModemXchangeScript;
 import org.eclipse.kura.net.modem.ModemConfig;
-import org.eclipse.kura.net.modem.ModemInterfaceAddressConfig;
 import org.eclipse.kura.usb.UsbDevice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -117,14 +117,12 @@ public class PppConfigWriter implements NetworkConfigurationVisitor {
         ModemConfig modemConfig = null;
         NetConfigIP4 netConfigIP4 = null;
 
-        for (ModemInterfaceAddressConfig modemInterfaceAddressConfig : modemInterfaceConfig
-                .getNetInterfaceAddresses()) {
-            for (NetConfig netConfig : modemInterfaceAddressConfig.getConfigs()) {
-                if (netConfig instanceof ModemConfig) {
-                    modemConfig = (ModemConfig) netConfig;
-                } else if (netConfig instanceof NetConfigIP4) {
-                    netConfigIP4 = (NetConfigIP4) netConfig;
-                }
+        List<NetConfig> netConfigs = ((AbstractNetInterface<?>) modemInterfaceConfig).getNetConfigs();
+        for (NetConfig netConfig : netConfigs) {
+            if (netConfig instanceof ModemConfig) {
+                modemConfig = (ModemConfig) netConfig;
+            } else if (netConfig instanceof NetConfigIP4) {
+                netConfigIP4 = (NetConfigIP4) netConfig;
             }
         }
 
@@ -206,6 +204,20 @@ public class PppConfigWriter implements NetworkConfigurationVisitor {
                 ModemPppConfigGenerator scriptGenerator = configClass.newInstance();
 
                 if (modemConfig != null) {
+
+                    String modemIdentifier = modemInterfaceConfig.getModemIdentifier();
+                    if (modemIdentifier != null) {
+                        StringBuilder key = new StringBuilder("net.interface.").append(modemInterfaceConfig.getName())
+                                .append(".modem.identifier");
+                        s_logger.debug("Storing modem identifier " + modemIdentifier + " using key: " + key);
+                        KuranetConfig.setProperty(key.toString(), modemIdentifier);
+                    }
+
+                    final StringBuilder gpsEnabledKey = new StringBuilder().append("net.interface.")
+                            .append(newInterfaceName).append(".config.gpsEnabled");
+                    s_logger.debug("Setting gpsEnabled for {}", newInterfaceName);
+                    KuranetConfig.setProperty(gpsEnabledKey.toString(), Boolean.toString(modemConfig.isGpsEnabled()));
+
                     s_logger.debug("Writing connect scripts for " + modemInterfaceConfig.getName() + " using "
                             + configClass.toString());
 
@@ -214,14 +226,6 @@ public class PppConfigWriter implements NetworkConfigurationVisitor {
                             chatFilename, disconnectFilename);
                     pppPeer.setBaudRate(baudRate);
                     pppPeer.write(pppPeerFilename);
-
-                    s_logger.debug("Writing {}", chatFilename);
-                    ModemXchangeScript connectScript = scriptGenerator.getConnectScript(modemConfig);
-                    connectScript.writeScript(chatFilename);
-
-                    s_logger.debug("Writing {}", disconnectFilename);
-                    ModemXchangeScript disconnectScript = scriptGenerator.getDisconnectScript(modemConfig);
-                    disconnectScript.writeScript(disconnectFilename);
 
                     if (pppNum >= 0) {
                         s_logger.debug("Linking peer file using ppp number: {}", pppNum);
@@ -232,13 +236,13 @@ public class PppConfigWriter implements NetworkConfigurationVisitor {
                                 "Can't create symbolic link to " + pppPeerFilename + ", invalid ppp number: " + pppNum);
                     }
 
-                    String modemIdentifier = modemInterfaceConfig.getModemIdentifier();
-                    if (modemIdentifier != null) {
-                        StringBuilder key = new StringBuilder("net.interface.").append(modemInterfaceConfig.getName())
-                                .append(".modem.identifier");
-                        s_logger.debug("Storing modem identifier " + modemIdentifier + " using key: " + key);
-                        KuranetConfig.setProperty(key.toString(), modemIdentifier);
-                    }
+                    s_logger.debug("Writing {}", chatFilename);
+                    ModemXchangeScript connectScript = scriptGenerator.getConnectScript(modemConfig);
+                    connectScript.writeScript(chatFilename);
+
+                    s_logger.debug("Writing {}", disconnectFilename);
+                    ModemXchangeScript disconnectScript = scriptGenerator.getDisconnectScript(modemConfig);
+                    disconnectScript.writeScript(disconnectFilename);
 
                     // Custom dns servers
                     if (netConfigIP4 != null) {
@@ -262,15 +266,11 @@ public class PppConfigWriter implements NetworkConfigurationVisitor {
                         }
                     }
 
-                    StringBuilder key = new StringBuilder().append("net.interface.").append(newInterfaceName)
-                            .append(".config.gpsEnabled");
-                    s_logger.debug("Setting gpsEnabled for {}", newInterfaceName);
-                    KuranetConfig.setProperty(key.toString(), Boolean.toString(modemConfig.isGpsEnabled()));
-
-                    key = new StringBuilder().append("net.interface.").append(newInterfaceName)
-                            .append(".config.resetTimeout");
+                    final StringBuilder resetTimeoutKey = new StringBuilder().append("net.interface.")
+                            .append(newInterfaceName).append(".config.resetTimeout");
                     s_logger.debug("Setting modem resetTimeout for {}", newInterfaceName);
-                    KuranetConfig.setProperty(key.toString(), Integer.toString(modemConfig.getResetTimeout()));
+                    KuranetConfig.setProperty(resetTimeoutKey.toString(),
+                            Integer.toString(modemConfig.getResetTimeout()));
                 } else {
                     s_logger.error("Error writing connect scripts - modemConfig is null");
                 }

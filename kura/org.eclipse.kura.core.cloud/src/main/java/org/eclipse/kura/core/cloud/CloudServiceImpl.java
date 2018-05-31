@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -11,13 +11,13 @@
  *******************************************************************************/
 package org.eclipse.kura.core.cloud;
 
-import static org.eclipse.kura.cloud.CloudPayloadEncoding.SIMPLE_JSON;
 import static org.eclipse.kura.cloud.CloudPayloadEncoding.KURA_PROTOBUF;
+import static org.eclipse.kura.cloud.CloudPayloadEncoding.SIMPLE_JSON;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Dictionary;
-import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +48,7 @@ import org.eclipse.kura.position.PositionService;
 import org.eclipse.kura.system.SystemAdminService;
 import org.eclipse.kura.system.SystemService;
 import org.osgi.framework.ServiceReference;
+import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.osgi.service.event.Event;
 import org.osgi.service.event.EventAdmin;
@@ -63,6 +64,8 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
 
     private static final String TOPIC_BA_APP = "BA";
     private static final String TOPIC_MQTT_APP = "MQTT";
+
+    private static final String CONNECTION_EVENT_PID_PROPERTY_KEY = "cloud.service.pid";
 
     private ComponentContext ctx;
 
@@ -89,6 +92,8 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
     private boolean birthPublished;
 
     private final AtomicInteger messageId;
+
+    private ServiceRegistration<?> cloudServiceRegistration;
 
     public CloudServiceImpl() {
         this.cloudClients = new CopyOnWriteArrayList<>();
@@ -182,14 +187,14 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
         // save the bundle context and the properties
         this.ctx = componentContext;
         this.options = new CloudServiceOptions(properties, this.systemService);
-
         //
         // install event listener for GPS locked event
-        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        Dictionary<String, Object> props = new Hashtable<>();
         String[] eventTopics = { PositionLockedEvent.POSITION_LOCKED_EVENT_TOPIC,
                 ModemReadyEvent.MODEM_EVENT_READY_TOPIC };
         props.put(EventConstants.EVENT_TOPIC, eventTopics);
-        this.ctx.getBundleContext().registerService(EventHandler.class.getName(), this, props);
+        this.cloudServiceRegistration = this.ctx.getBundleContext().registerService(EventHandler.class.getName(), this,
+                props);
 
         this.dataService.addDataServiceListener(this);
 
@@ -248,6 +253,8 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
         this.positionService = null;
         this.eventAdmin = null;
         this.certificatesService = null;
+
+        this.cloudServiceRegistration.unregister();
     }
 
     @Override
@@ -314,7 +321,7 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
 
     @Override
     public String[] getCloudApplicationIdentifiers() {
-        List<String> appIds = new ArrayList<String>();
+        List<String> appIds = new ArrayList<>();
         for (CloudClientImpl cloudClient : this.cloudClients) {
             appIds.add(cloudClient.getApplicationId());
         }
@@ -378,8 +385,7 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
             logger.warn("Cannot setup cloud service connection");
         }
 
-        // raise event
-        this.eventAdmin.postEvent(new CloudConnectionEstablishedEvent(new HashMap<String, Object>()));
+        this.postConnectionStateChangeEvent(true);
 
         // notify listeners
         for (CloudClientImpl cloudClient : this.cloudClients) {
@@ -417,13 +423,13 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
     @Override
     public void onDisconnected() {
         // raise event
-        this.eventAdmin.postEvent(new CloudConnectionLostEvent(new HashMap<String, Object>()));
+        postConnectionStateChangeEvent(false);
     }
 
     @Override
     public void onConnectionLost(Throwable cause) {
         // raise event
-        this.eventAdmin.postEvent(new CloudConnectionLostEvent(new HashMap<String, Object>()));
+        postConnectionStateChangeEvent(false);
 
         // notify listeners
         for (CloudClientImpl cloudClient : this.cloudClients) {
@@ -460,9 +466,8 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
                                 }
                             }
                             boolean validMessage = false;
-                            if (this.certificatesService == null) {
-                                validMessage = true;
-                            } else if (this.certificatesService.verifySignature(kuraTopic, kuraPayload)) {
+                            if (this.certificatesService == null
+                                    || this.certificatesService.verifySignature(kuraTopic, kuraPayload)) {
                                 validMessage = true;
                             }
 
@@ -679,6 +684,7 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
             try {
                 this.messageId.wait(1000);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 logger.info("Interrupted while waiting for the message to be published", e);
             }
         }
@@ -724,5 +730,15 @@ public class CloudServiceImpl implements CloudService, DataServiceListener, Conf
             kuraPayload.setBody(payload);
         }
         return kuraPayload;
+    }
+
+    private void postConnectionStateChangeEvent(final boolean isConnected) {
+
+        final Map<String, Object> eventProperties = Collections.singletonMap(CONNECTION_EVENT_PID_PROPERTY_KEY,
+                (String) ctx.getProperties().get(ConfigurationService.KURA_SERVICE_PID));
+
+        final Event event = isConnected ? new CloudConnectionEstablishedEvent(eventProperties)
+                : new CloudConnectionLostEvent(eventProperties);
+        this.eventAdmin.postEvent(event);
     }
 }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -18,6 +18,7 @@ import static org.eclipse.kura.asset.provider.AssetConstants.ASSET_DESC_PROP;
 import static org.eclipse.kura.asset.provider.AssetConstants.ASSET_DRIVER_PROP;
 import static org.eclipse.kura.asset.provider.AssetConstants.CHANNEL_NAME_PROHIBITED_CHARS;
 import static org.eclipse.kura.asset.provider.AssetConstants.CHANNEL_PROPERTY_SEPARATOR;
+import static org.eclipse.kura.asset.provider.AssetConstants.ENABLED;
 import static org.eclipse.kura.asset.provider.AssetConstants.TYPE;
 import static org.eclipse.kura.asset.provider.AssetConstants.VALUE_TYPE;
 
@@ -30,8 +31,6 @@ import java.util.Set;
 import org.eclipse.kura.asset.AssetConfiguration;
 import org.eclipse.kura.channel.Channel;
 import org.eclipse.kura.channel.ChannelType;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.AssetMessages;
 import org.eclipse.kura.type.DataType;
 import org.eclipse.kura.util.collection.CollectionUtil;
 import org.slf4j.Logger;
@@ -46,8 +45,6 @@ import org.slf4j.LoggerFactory;
 public final class AssetOptions {
 
     private static final Logger logger = LoggerFactory.getLogger(AssetOptions.class);
-
-    private static final AssetMessages message = LocalizationAdapter.adapt(AssetMessages.class);
 
     private String assetDescription;
 
@@ -66,7 +63,7 @@ public final class AssetOptions {
      *             if the argument is null
      */
     public AssetOptions(final Map<String, Object> properties) {
-        requireNonNull(properties, message.propertiesNonNull());
+        requireNonNull(properties, "Properties cannot be null");
         extractProperties(properties);
     }
 
@@ -82,7 +79,7 @@ public final class AssetOptions {
             this.assetDescription = (String) properties.getOrDefault(ASSET_DESC_PROP.value(), "");
             this.channels = retreiveChannelList(properties);
         } catch (final Exception ex) {
-            logger.error(message.errorRetrievingChannels(), ex);
+            logger.error("Error while retrieving channels from the provided configurable properties...", ex);
         }
     }
 
@@ -134,7 +131,7 @@ public final class AssetOptions {
      *             if the argument is null
      */
     public void update(final Map<String, Object> properties) {
-        requireNonNull(properties, message.propertiesNonNull());
+        requireNonNull(properties, "Properties cannot be null");
         extractProperties(properties);
     }
 
@@ -156,8 +153,17 @@ public final class AssetOptions {
         return DataType.getDataType(valueTypeProp.toString());
     }
 
+    private boolean isEnabled(final Map<String, Object> properties) {
+        try {
+            return Boolean.parseBoolean(properties.get(ENABLED.value()).toString());
+        } catch (Exception e) {
+            logger.debug("Failed to retrieve enabled channel property");
+            return true;
+        }
+    }
+
     private Channel extractChannel(final String channelName, final Map<String, Object> properties) {
-        logger.debug(message.retrievingChannel());
+        logger.debug("Retrieving single channel information from the properties...");
         Channel channel = null;
 
         Map<String, Object> channelConfig = retrieveChannelConfig(channelName, properties);
@@ -167,11 +173,13 @@ public final class AssetOptions {
 
         final ChannelType channelType = getChannelType(channelConfig);
         final DataType dataType = getDataType(channelConfig);
+        final boolean isEnabled = isEnabled(channelConfig);
 
         if (channelType != null && dataType != null) {
             channel = new Channel(channelName, channelType, dataType, channelConfig);
+            channel.setEnabled(isEnabled);
         }
-        logger.debug(message.retrievingChannelDone());
+        logger.debug("Retrieving single channel information from the properties...Done");
         return channel;
     }
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2017, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -24,13 +24,14 @@ import java.util.function.Consumer;
 
 import org.eclipse.kura.configuration.ConfigurableComponent;
 import org.eclipse.kura.configuration.ConfigurationService;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEmitter;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireHelperService;
 import org.eclipse.kura.wire.WireReceiver;
 import org.eclipse.kura.wire.WireSupport;
+import org.osgi.framework.ServiceReference;
+import org.osgi.service.component.ComponentContext;
 import org.osgi.service.wireadmin.Wire;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,7 +42,6 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
     private static final String QUEUE_CAPACITY_PROP_NAME = "queue.capacity";
 
     private static final Logger logger = LoggerFactory.getLogger(Fifo.class);
-    private static final WireMessages message = LocalizationAdapter.adapt(WireMessages.class);
 
     private volatile WireHelperService wireHelperService;
     private WireSupport wireSupport;
@@ -60,21 +60,22 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
         }
     }
 
-    public void activate(final Map<String, Object> properties) {
-        logger.info(message.activatingFifo());
-        wireSupport = this.wireHelperService.newWireSupport(this);
+    public void activate(final Map<String, Object> properties, ComponentContext componentContext) {
+        logger.info("Activating Fifo...");
+        wireSupport = this.wireHelperService.newWireSupport(this,
+                (ServiceReference<WireComponent>) componentContext.getServiceReference());
         updated(properties);
-        logger.info(message.activatingFifoDone());
+        logger.info("Activating Fifo... Done");
     }
 
     public void deactivate() {
-        logger.info(message.deactivatingFifo());
+        logger.info("Dectivating Fifo...");
         stopEmitterThread();
-        logger.info(message.deactivatingFifoDone());
+        logger.info("Dectivating Fifo... Done");
     }
 
     public void updated(final Map<String, Object> properties) {
-        logger.info(message.updatingFifo());
+        logger.info("Updating Fifo...");
 
         String threadName = (String) properties.getOrDefault(ConfigurationService.KURA_SERVICE_PID, "Fifo")
                 + "-EmitterThread";
@@ -83,7 +84,7 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
 
         restartEmitterThread(threadName, queueCapacity, discardEnvelopes);
 
-        logger.info(message.updatingFifoDone());
+        logger.info("Updating Fifo... Done");
     }
 
     private synchronized void stopEmitterThread() {
@@ -104,7 +105,7 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
 
     @Override
     public void onWireReceive(WireEnvelope wireEnvelope) {
-        requireNonNull(wireEnvelope, message.wireEnvelopeNonNull());
+        requireNonNull(wireEnvelope, "Wire Envelope cannot be null");
         if (emitterThread != null) {
             emitterThread.submit(wireEnvelope);
         }
@@ -144,7 +145,7 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
         private Consumer<WireEnvelope> submitter;
 
         public FifoEmitterThread(String threadName, int queueCapacity, boolean discardEnvelopes) {
-            this.queue = new ArrayList<WireEnvelope>();
+            this.queue = new ArrayList<>();
             this.queueCapacity = queueCapacity;
             setName(threadName);
             if (discardEnvelopes) {
@@ -186,7 +187,8 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
                     producer.signal();
                     logger.debug("envelope submitted");
                 } catch (InterruptedException e) {
-                    logger.warn(message.fifoInterruptedWhileSubmitting(), e);
+                    Thread.currentThread().interrupt();
+                    logger.warn("Interrupted while adding new envelope to queue", e);
                 } finally {
                     lock.unlock();
                 }
@@ -228,7 +230,7 @@ public class Fifo implements WireEmitter, WireReceiver, ConfigurableComponent {
                     }
                     wireSupport.emit(next.getRecords());
                 } catch (Exception e) {
-                    logger.warn(message.fifoUnexpectedExceptionWhileDispatching(), e);
+                    logger.warn("Unexpected exception while dispatching envelope", e);
                 }
             }
             logger.debug("exiting");

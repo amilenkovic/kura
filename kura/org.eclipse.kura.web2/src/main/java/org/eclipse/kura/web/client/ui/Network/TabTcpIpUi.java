@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -67,6 +67,12 @@ import com.google.gwt.user.client.ui.Widget;
 
 public class TabTcpIpUi extends Composite implements NetworkTab {
 
+    private static final String DNS_REGEX = "[\\s,;\\n\\t]+";
+    private static final String NET_IPV4_STATUS_ENABLED_WAN = "netIPv4StatusEnabledWAN";
+    private static final String NET_IPV4_STATUS_ENABLED_LAN = "netIPv4StatusEnabledLAN";
+    private static final String NET_IPV4_STATUS_L2_ONLY = "netIPv4StatusL2Only";
+    private static final String NET_IPV4_STATUS_UNMANAGED = "netIPv4StatusUnmanaged";
+    private static final String NET_IPV4_STATUS_DISABLED = "netIPv4StatusDisabled";
     private static final String IPV4_MODE_MANUAL = GwtNetIfConfigMode.netIPv4ConfigModeManual.name();
     private static final String IPV4_MODE_DHCP = GwtNetIfConfigMode.netIPv4ConfigModeDHCP.name();
     private static final String IPV4_MODE_DHCP_MESSAGE = MessageUtils.get(IPV4_MODE_DHCP);
@@ -74,6 +80,9 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
     private static final String IPV4_STATUS_WAN_MESSAGE = MessageUtils.get(IPV4_STATUS_WAN);
     private static final String IPV4_STATUS_LAN = GwtNetIfStatus.netIPv4StatusEnabledLAN.name();
     private static final String IPV4_STATUS_LAN_MESSAGE = MessageUtils.get(IPV4_STATUS_LAN);
+    private static final String IPV4_STATUS_UNMANAGED = GwtNetIfStatus.netIPv4StatusUnmanaged.name();
+    private static final String IPV4_STATUS_L2ONLY = GwtNetIfStatus.netIPv4StatusL2Only.name();
+
     private static final String IPV4_STATUS_DISABLED = GwtNetIfStatus.netIPv4StatusDisabled.name();
     private static final String IPV4_STATUS_DISABLED_MESSAGE = MessageUtils.get(IPV4_STATUS_DISABLED);
 
@@ -90,7 +99,7 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
     }
 
     GwtSession session;
-    boolean m_dirty;
+    boolean dirty;
     GwtNetInterfaceConfig selectedNetIfConfig;
     NetworkTabsUi tabs;
 
@@ -116,9 +125,6 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
     @UiField
     FormLabel labelDns;
     @UiField
-    FormLabel labelSearch;
-
-    @UiField
     HelpBlock helpIp;
     @UiField
     HelpBlock helpSubnet;
@@ -135,9 +141,6 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
     TextBox gateway;
     @UiField
     TextBox dns;
-    @UiField
-    TextBox search;
-
     @UiField
     ListBox status;
     @UiField
@@ -195,19 +198,22 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
 
     @Override
     public void setDirty(boolean flag) {
-        this.m_dirty = flag;
+        this.dirty = flag;
     }
 
     @Override
     public boolean isDirty() {
-        return this.m_dirty;
+        return this.dirty;
     }
 
     @Override
     public void setNetInterface(GwtNetInterfaceConfig config) {
         setDirty(true);
+        if (config == null) {
+            return;
+        }
 
-        if (config != null && config.getSubnetMask() != null && config.getSubnetMask().equals("255.255.255.255")) {
+        if (config.getSubnetMask() != null && "255.255.255.255".equals(config.getSubnetMask())) {
             config.setSubnetMask("");
         }
 
@@ -216,34 +222,35 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
         logger.fine(this.selectedNetIfConfig.getConfigMode());
         logger.fine(this.selectedNetIfConfig.getIpAddress());
 
-        // Remove LAN option for modems
-        if (this.selectedNetIfConfig != null && this.selectedNetIfConfig.getHwTypeEnum() == GwtNetIfType.MODEM) {
-            if (this.status != null) {
-                for (int i = 0; i < this.status.getItemCount(); i++) {
-                    if (this.status.getItemText(i).equals(IPV4_STATUS_LAN_MESSAGE)) {
-                        this.status.removeItem(i);
-                    }
-                }
-            }
-        } else {
-            if (this.status != null) {
-                this.status.clear();
-                this.status.addItem(MessageUtils.get("netIPv4StatusDisabled"));
-                this.status.addItem(MessageUtils.get("netIPv4StatusEnabledLAN"));
-                this.status.addItem(MessageUtils.get("netIPv4StatusEnabledWAN"));
-            }
+        initStatusValues();
+    }
+
+    protected void initStatusValues() {
+        this.status.clear();
+        this.status.addItem(MessageUtils.get(NET_IPV4_STATUS_DISABLED));
+        this.status.addItem(MessageUtils.get(NET_IPV4_STATUS_UNMANAGED));
+
+        if (this.selectedNetIfConfig.getHwTypeEnum() != GwtNetIfType.MODEM) {
+            this.status.addItem(MessageUtils.get(NET_IPV4_STATUS_L2_ONLY));
+            this.status.addItem(MessageUtils.get(NET_IPV4_STATUS_ENABLED_LAN));
         }
+        this.status.addItem(MessageUtils.get(NET_IPV4_STATUS_ENABLED_WAN));
     }
 
     @Override
     public void getUpdatedNetInterface(GwtNetInterfaceConfig updatedNetIf) {
         if (this.form != null) {
-            if (this.status.getSelectedItemText().equals(MessageUtils.get("netIPv4StatusDisabled"))) {
-                updatedNetIf.setStatus(IPV4_STATUS_DISABLED);
-            } else if (this.status.getSelectedItemText().equals(MessageUtils.get("netIPv4StatusEnabledLAN"))) {
+
+            if (this.status.getSelectedItemText().equals(MessageUtils.get(NET_IPV4_STATUS_UNMANAGED))) {
+                updatedNetIf.setStatus(IPV4_STATUS_UNMANAGED);
+            } else if (this.status.getSelectedItemText().equals(MessageUtils.get(NET_IPV4_STATUS_L2_ONLY))) {
+                updatedNetIf.setStatus(IPV4_STATUS_L2ONLY);
+            } else if (this.status.getSelectedItemText().equals(MessageUtils.get(NET_IPV4_STATUS_ENABLED_LAN))) {
                 updatedNetIf.setStatus(IPV4_STATUS_LAN);
-            } else {
+            } else if (this.status.getSelectedItemText().equals(MessageUtils.get(NET_IPV4_STATUS_ENABLED_WAN))) {
                 updatedNetIf.setStatus(IPV4_STATUS_WAN);
+            } else {
+                updatedNetIf.setStatus(IPV4_STATUS_DISABLED);
             }
 
             if (IPV4_MODE_DHCP_MESSAGE.equals(this.configure.getSelectedItemText())) {
@@ -271,11 +278,6 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
                 updatedNetIf.setDnsServers(this.dns.getValue());
             } else {
                 updatedNetIf.setDnsServers("");
-            }
-            if (this.search.getValue() != null && !"".equals(this.search.getValue().trim())) {
-                updatedNetIf.setSearchDomains(this.search.getValue());
-            } else {
-                updatedNetIf.setSearchDomains("");
             }
         }
     }
@@ -327,7 +329,7 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
 
     public boolean isDhcp() {
         if (this.configure == null) {
-            logger.log(Level.FINER, "TcpIpConfigTab.isDhcp() - m_configureCombo is null");
+            logger.log(Level.FINER, "TcpIpConfigTab.isDhcp() - this.configure is null");
             return true;
         }
         return IPV4_MODE_DHCP_MESSAGE.equals(this.configure.getSelectedValue());
@@ -349,7 +351,7 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
     // ---------------Private Methods------------
 
     private void initHelpButtons() {
-        this.statusHelp.setHelpText(MSGS.netIPv4ModemToolTipStatus());
+        this.statusHelp.setHelpText(MSGS.netIPv4ToolTipStatus());
         this.configureHelp.setHelpText(MSGS.netIPv4ToolTipConfigure());
         this.ipHelp.setHelpText(MSGS.netIPv4ToolTipAddress());
         this.subnetHelp.setHelpText(MSGS.netIPv4ToolTipSubnetMask());
@@ -366,90 +368,240 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
         this.labelSubnet.setText(MSGS.netIPv4SubnetMask());
         this.labelGateway.setText(MSGS.netIPv4Gateway());
         this.labelDns.setText(MSGS.netIPv4DNSServers());
-        this.labelSearch.setText(MSGS.netIPv4SearchDomains());
 
         for (GwtNetIfConfigMode mode : GwtNetIfConfigMode.values()) {
             this.configure.addItem(MessageUtils.get(mode.name()));
         }
 
-        // Populate status list
-        if (this.selectedNetIfConfig != null && this.selectedNetIfConfig.getHwTypeEnum() == GwtNetIfType.MODEM) {
-            if (this.status != null) {
-                this.status.clear();
-                this.status.addItem(MessageUtils.get("netIPv4StatusDisabled"));
-                this.status.addItem(MessageUtils.get("netIPv4StatusEnabledWAN"));
-            }
-        } else {
-            if (this.status != null) {
-                this.status.clear();
-                this.status.addItem(MessageUtils.get("netIPv4StatusDisabled"));
-                this.status.addItem(MessageUtils.get("netIPv4StatusEnabledLAN"));
-                this.status.addItem(MessageUtils.get("netIPv4StatusEnabledWAN"));
-            }
-        }
+        initStatusField();
 
-        // SetTooltips
+        initConfigureField();
 
-        // Status
-        this.status.addMouseOverHandler(new MouseOverHandler() {
+        initIpAddressField();
+
+        initSubnetMaskField();
+
+        initGatewayField();
+
+        initDnsServersField();
+
+        initDHCPLeaseField();
+    }
+
+    private void initDHCPLeaseField() {
+        // Renew DHCP Lease
+
+        this.renew.setText(MSGS.netIPv4RenewDHCPLease());
+        this.renew.addClickHandler(new ClickHandler() {
+
+            @Override
+            public void onClick(ClickEvent event) {
+                EntryClassUi.showWaitModal();
+                TabTcpIpUi.this.gwtXSRFService.generateSecurityToken(new AsyncCallback<GwtXSRFToken>() {
+
+                    @Override
+                    public void onFailure(Throwable ex) {
+                        EntryClassUi.hideWaitModal();
+                        FailureHandler.handle(ex);
+                    }
+
+                    @Override
+                    public void onSuccess(GwtXSRFToken token) {
+                        TabTcpIpUi.this.gwtNetworkService.renewDhcpLease(token,
+                                TabTcpIpUi.this.selectedNetIfConfig.getName(), new AsyncCallback<Void>() {
+
+                                    @Override
+                                    public void onFailure(Throwable ex) {
+                                        EntryClassUi.hideWaitModal();
+                                        FailureHandler.handle(ex);
+                                    }
+
+                                    @Override
+                                    public void onSuccess(Void result) {
+                                        refresh();
+                                        EntryClassUi.hideWaitModal();
+                                    }
+                                });
+                    }
+
+                });
+            }
+        });
+
+        this.renew.addMouseOverHandler(new MouseOverHandler() {
 
             @Override
             public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.status.isEnabled()) {
+                if (TabTcpIpUi.this.renew.isEnabled()) {
                     TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ModemToolTipStatus()));
+                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipRenew()));
                 }
             }
         });
-        this.status.addMouseOutHandler(new MouseOutHandler() {
+        this.renew.addMouseOutHandler(new MouseOutHandler() {
 
             @Override
             public void onMouseOut(MouseOutEvent event) {
                 resetHelp();
             }
         });
-        this.status.addChangeHandler(new ChangeHandler() {
+    }
+
+    private void initDnsServersField() {
+        this.dns.addMouseOverHandler(new MouseOverHandler() {
+
+            @Override
+            public void onMouseOver(MouseOverEvent event) {
+                if (TabTcpIpUi.this.dns.isEnabled()) {
+                    TabTcpIpUi.this.helpText.clear();
+                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipDns()));
+                }
+            }
+        });
+        this.dns.addMouseOutHandler(new MouseOutHandler() {
+
+            @Override
+            public void onMouseOut(MouseOutEvent event) {
+                resetHelp();
+            }
+        });
+        this.dns.addChangeHandler(new ChangeHandler() {
 
             @Override
             public void onChange(ChangeEvent event) {
                 setDirty(true);
-                TabTcpIpUi.this.tabs.adjustInterfaceTabs();
 
-                refreshForm();
-                resetValidations();
+                if (TabTcpIpUi.this.dns.getText().trim().length() == 0) {
+                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.NONE);
+                    TabTcpIpUi.this.helpDns.setText("");
+                    return;
+                }
 
-                // Check for other WAN interfaces if current interface is
-                // changed to WAN
-                if (isWanEnabled()) {
-                    EntryClassUi.showWaitModal();
-                    TabTcpIpUi.this.gwtNetworkService
-                            .findNetInterfaceConfigurations(new AsyncCallback<List<GwtNetInterfaceConfig>>() {
-
-                        @Override
-                        public void onFailure(Throwable caught) {
-                            EntryClassUi.hideWaitModal();
-                            FailureHandler.handle(caught);
-                        }
-
-                        @Override
-                        public void onSuccess(List<GwtNetInterfaceConfig> result) {
-                            EntryClassUi.hideWaitModal();
-                            for (GwtNetInterfaceConfig config : result) {
-                                if (config.getStatusEnum().equals(GwtNetIfStatus.netIPv4StatusEnabledWAN)
-                                        && !config.getName().equals(TabTcpIpUi.this.selectedNetIfConfig.getName())) {
-                                    logger.log(Level.SEVERE, "Error: Status Invalid");
-                                    TabTcpIpUi.this.wanModal.show();
-                                    break;
-                                }
-                            }
-                        }
-
-                    });
+                String[] aDnsServers = TabTcpIpUi.this.dns.getText().trim().split(DNS_REGEX);
+                boolean validDnsList = true;
+                for (String dnsEntry : aDnsServers) {
+                    if (dnsEntry.length() > 0 && !dnsEntry.matches(FieldType.IPv4_ADDRESS.getRegex())) {
+                        validDnsList = false;
+                        break;
+                    }
+                }
+                if (!validDnsList) {
+                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.ERROR);
+                    TabTcpIpUi.this.helpDns.setText(MSGS.netIPv4InvalidAddress());
+                } else {
+                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.NONE);
+                    TabTcpIpUi.this.helpDns.setText("");
                 }
             }
         });
+    }
 
-        // Configure
+    private void initGatewayField() {
+        this.gateway.addMouseOverHandler(new MouseOverHandler() {
+
+            @Override
+            public void onMouseOver(MouseOverEvent event) {
+                if (TabTcpIpUi.this.gateway.isEnabled()) {
+                    TabTcpIpUi.this.helpText.clear();
+                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipGateway()));
+                }
+            }
+        });
+        this.gateway.addMouseOutHandler(new MouseOutHandler() {
+
+            @Override
+            public void onMouseOut(MouseOutEvent event) {
+                resetHelp();
+            }
+        });
+        this.gateway.addChangeHandler(new ChangeHandler() {
+
+            @Override
+            public void onChange(ChangeEvent event) {
+                setDirty(true);
+                if (!TabTcpIpUi.this.gateway.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
+                        && TabTcpIpUi.this.gateway.getText().trim().length() > 0) {
+                    TabTcpIpUi.this.groupGateway.setValidationState(ValidationState.ERROR);
+                    TabTcpIpUi.this.helpGateway.setText(MSGS.netIPv4InvalidAddress());
+                } else {
+                    TabTcpIpUi.this.groupGateway.setValidationState(ValidationState.NONE);
+                    TabTcpIpUi.this.helpGateway.setText("");
+                }
+            }
+        });
+    }
+
+    private void initSubnetMaskField() {
+        this.subnet.addMouseOverHandler(new MouseOverHandler() {
+
+            @Override
+            public void onMouseOver(MouseOverEvent event) {
+                if (TabTcpIpUi.this.subnet.isEnabled()) {
+                    TabTcpIpUi.this.helpText.clear();
+                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipSubnetMask()));
+                }
+            }
+        });
+        this.subnet.addMouseOutHandler(new MouseOutHandler() {
+
+            @Override
+            public void onMouseOut(MouseOutEvent event) {
+                resetHelp();
+            }
+        });
+        this.subnet.addChangeHandler(new ChangeHandler() {
+
+            @Override
+            public void onChange(ChangeEvent event) {
+                setDirty(true);
+                if (!TabTcpIpUi.this.subnet.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
+                        && TabTcpIpUi.this.subnet.getText().trim().length() > 0) {
+                    TabTcpIpUi.this.groupSubnet.setValidationState(ValidationState.ERROR);
+                    TabTcpIpUi.this.helpSubnet.setText(MSGS.netIPv4InvalidAddress());
+                } else {
+                    TabTcpIpUi.this.groupSubnet.setValidationState(ValidationState.NONE);
+                    TabTcpIpUi.this.helpSubnet.setText("");
+                }
+            }
+        });
+    }
+
+    private void initIpAddressField() {
+        this.ip.addMouseOverHandler(new MouseOverHandler() {
+
+            @Override
+            public void onMouseOver(MouseOverEvent event) {
+                if (TabTcpIpUi.this.ip.isEnabled()) {
+                    TabTcpIpUi.this.helpText.clear();
+                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipAddress()));
+                }
+            }
+        });
+        this.ip.addMouseOutHandler(new MouseOutHandler() {
+
+            @Override
+            public void onMouseOut(MouseOutEvent event) {
+                resetHelp();
+            }
+        });
+        this.ip.addBlurHandler(new BlurHandler() {
+
+            @Override
+            public void onBlur(BlurEvent event) {
+                setDirty(true);
+                if (!TabTcpIpUi.this.ip.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
+                        || TabTcpIpUi.this.ip.getText().trim().length() <= 0) {
+                    TabTcpIpUi.this.groupIp.setValidationState(ValidationState.ERROR);
+                    TabTcpIpUi.this.helpIp.setText(MSGS.netIPv4InvalidAddress());
+                } else {
+                    TabTcpIpUi.this.groupIp.setValidationState(ValidationState.NONE);
+                    TabTcpIpUi.this.helpIp.setText("");
+                }
+            }
+        });
+    }
+
+    private void initConfigureField() {
         this.configure.addMouseOverHandler(new MouseOverHandler() {
 
             @Override
@@ -492,226 +644,74 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
             this.gateway.setEnabled(true);
             this.renew.setEnabled(false);
         }
+    }
 
-        // IP Address
-        this.ip.addMouseOverHandler(new MouseOverHandler() {
+    private void initStatusField() {
+        initStatusValues();
+
+        this.status.addMouseOverHandler(new MouseOverHandler() {
 
             @Override
             public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.ip.isEnabled()) {
+                if (TabTcpIpUi.this.status.isEnabled()) {
                     TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipAddress()));
+                    if (TabTcpIpUi.this.selectedNetIfConfig != null
+                            && TabTcpIpUi.this.selectedNetIfConfig.getHwTypeEnum() == GwtNetIfType.MODEM) {
+                        TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ModemToolTipStatus()));
+                    } else {
+                        TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipStatus()));
+                    }
                 }
             }
         });
-        this.ip.addMouseOutHandler(new MouseOutHandler() {
+        this.status.addMouseOutHandler(new MouseOutHandler() {
 
             @Override
             public void onMouseOut(MouseOutEvent event) {
                 resetHelp();
             }
         });
-        this.ip.addBlurHandler(new BlurHandler() {
-
-            @Override
-            public void onBlur(BlurEvent event) {
-                setDirty(true);
-                if (!TabTcpIpUi.this.ip.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
-                        || !(TabTcpIpUi.this.ip.getText().trim().length() > 0)) {
-                    TabTcpIpUi.this.groupIp.setValidationState(ValidationState.ERROR);
-                    TabTcpIpUi.this.helpIp.setText(MSGS.netIPv4InvalidAddress());
-                } else {
-                    TabTcpIpUi.this.groupIp.setValidationState(ValidationState.NONE);
-                    TabTcpIpUi.this.helpIp.setText("");
-                }
-            }
-        });
-
-        // Subnet Mask
-        this.subnet.addMouseOverHandler(new MouseOverHandler() {
-
-            @Override
-            public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.subnet.isEnabled()) {
-                    TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipSubnetMask()));
-                }
-            }
-        });
-        this.subnet.addMouseOutHandler(new MouseOutHandler() {
-
-            @Override
-            public void onMouseOut(MouseOutEvent event) {
-                resetHelp();
-            }
-        });
-        this.subnet.addChangeHandler(new ChangeHandler() {
+        this.status.addChangeHandler(new ChangeHandler() {
 
             @Override
             public void onChange(ChangeEvent event) {
                 setDirty(true);
-                if (!TabTcpIpUi.this.subnet.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
-                        && TabTcpIpUi.this.subnet.getText().trim().length() > 0) {
-                    TabTcpIpUi.this.groupSubnet.setValidationState(ValidationState.ERROR);
-                    TabTcpIpUi.this.helpSubnet.setText(MSGS.netIPv4InvalidAddress());
-                } else {
-                    TabTcpIpUi.this.groupSubnet.setValidationState(ValidationState.NONE);
-                    TabTcpIpUi.this.helpSubnet.setText("");
+                TabTcpIpUi.this.tabs.adjustInterfaceTabs();
+
+                refreshForm();
+                resetValidations();
+
+                // Check for other WAN interfaces if current interface is
+                // changed to WAN
+                if (isWanEnabled()) {
+                    EntryClassUi.showWaitModal();
+                    TabTcpIpUi.this.gwtNetworkService
+                            .findNetInterfaceConfigurations(new AsyncCallback<List<GwtNetInterfaceConfig>>() {
+
+                                @Override
+                                public void onFailure(Throwable caught) {
+                                    EntryClassUi.hideWaitModal();
+                                    FailureHandler.handle(caught);
+                                }
+
+                                @Override
+                                public void onSuccess(List<GwtNetInterfaceConfig> result) {
+                                    EntryClassUi.hideWaitModal();
+                                    for (GwtNetInterfaceConfig config : result) {
+                                        if (config.getStatusEnum().equals(GwtNetIfStatus.netIPv4StatusEnabledWAN)
+                                                && !config.getName()
+                                                        .equals(TabTcpIpUi.this.selectedNetIfConfig.getName())) {
+                                            logger.log(Level.SEVERE, "Error: Status Invalid");
+                                            TabTcpIpUi.this.wanModal.show();
+                                            break;
+                                        }
+                                    }
+                                }
+
+                            });
                 }
             }
         });
-
-        // Gateway
-        this.gateway.addMouseOverHandler(new MouseOverHandler() {
-
-            @Override
-            public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.gateway.isEnabled()) {
-                    TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipGateway()));
-                }
-            }
-        });
-        this.gateway.addMouseOutHandler(new MouseOutHandler() {
-
-            @Override
-            public void onMouseOut(MouseOutEvent event) {
-                resetHelp();
-            }
-        });
-        this.gateway.addChangeHandler(new ChangeHandler() {
-
-            @Override
-            public void onChange(ChangeEvent event) {
-                setDirty(true);
-                if (!TabTcpIpUi.this.gateway.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
-                        && TabTcpIpUi.this.gateway.getText().trim().length() > 0) {
-                    TabTcpIpUi.this.groupGateway.setValidationState(ValidationState.ERROR);
-                    TabTcpIpUi.this.helpGateway.setText(MSGS.netIPv4InvalidAddress());
-                } else {
-                    TabTcpIpUi.this.groupGateway.setValidationState(ValidationState.NONE);
-                    TabTcpIpUi.this.helpGateway.setText("");
-                }
-            }
-        });
-
-        // DNS Servers
-        this.dns.addMouseOverHandler(new MouseOverHandler() {
-
-            @Override
-            public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.dns.isEnabled()) {
-                    TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipDns()));
-                }
-            }
-        });
-        this.dns.addMouseOutHandler(new MouseOutHandler() {
-
-            @Override
-            public void onMouseOut(MouseOutEvent event) {
-                resetHelp();
-            }
-        });
-        this.dns.addChangeHandler(new ChangeHandler() {
-
-            @Override
-            public void onChange(ChangeEvent event) {
-                setDirty(true);
-
-                if (TabTcpIpUi.this.dns.getText().trim().length() == 0) {
-                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.NONE);
-                    TabTcpIpUi.this.helpDns.setText("");
-                    return;
-                }
-
-                String regex = "[\\s,;\\n\\t]+";
-                String[] aDnsServers = TabTcpIpUi.this.dns.getText().trim().split(regex);
-                boolean validDnsList = true;
-                for (String dnsEntry : aDnsServers) {
-                    if (dnsEntry.length() > 0 && !dnsEntry.matches(FieldType.IPv4_ADDRESS.getRegex())) {
-                        validDnsList = false;
-                        break;
-                    }
-                }
-                if (!validDnsList) {
-                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.ERROR);
-                    TabTcpIpUi.this.helpDns.setText(MSGS.netIPv4InvalidAddress());
-                } else {
-                    TabTcpIpUi.this.groupDns.setValidationState(ValidationState.NONE);
-                    TabTcpIpUi.this.helpDns.setText("");
-                }
-
-                /*
-                 * if (!TabTcpIpUi.this.dns.getText().trim().matches(FieldType.IPv4_ADDRESS.getRegex())
-                 * && TabTcpIpUi.this.dns.getText().trim().length() > 0) {
-                 * TabTcpIpUi.this.groupDns.setValidationState(ValidationState.ERROR);
-                 * TabTcpIpUi.this.helpDns.setText(MSGS.netIPv4InvalidAddress());
-                 * } else {
-                 * TabTcpIpUi.this.groupDns.setValidationState(ValidationState.NONE);
-                 * TabTcpIpUi.this.helpDns.setText("");
-                 * }
-                 */
-            }
-        });
-
-        // Renew DHCP Lease
-
-        this.renew.setText(MSGS.netIPv4RenewDHCPLease());
-        this.renew.addClickHandler(new ClickHandler() {
-
-            @Override
-            public void onClick(ClickEvent event) {
-                EntryClassUi.showWaitModal();
-                TabTcpIpUi.this.gwtXSRFService.generateSecurityToken(new AsyncCallback<GwtXSRFToken>() {
-
-                    @Override
-                    public void onFailure(Throwable ex) {
-                        EntryClassUi.hideWaitModal();
-                        FailureHandler.handle(ex);
-                    }
-
-                    @Override
-                    public void onSuccess(GwtXSRFToken token) {
-                        TabTcpIpUi.this.gwtNetworkService.renewDhcpLease(token,
-                                TabTcpIpUi.this.selectedNetIfConfig.getName(), new AsyncCallback<Void>() {
-
-                            @Override
-                            public void onFailure(Throwable ex) {
-                                EntryClassUi.hideWaitModal();
-                                FailureHandler.handle(ex);
-                            }
-
-                            @Override
-                            public void onSuccess(Void result) {
-                                refresh();
-                                EntryClassUi.hideWaitModal();
-                            }
-                        });
-                    }
-
-                });
-            }
-        });
-
-        this.renew.addMouseOverHandler(new MouseOverHandler() {
-
-            @Override
-            public void onMouseOver(MouseOverEvent event) {
-                if (TabTcpIpUi.this.renew.isEnabled()) {
-                    TabTcpIpUi.this.helpText.clear();
-                    TabTcpIpUi.this.helpText.add(new Span(MSGS.netIPv4ToolTipRenew()));
-                }
-            }
-        });
-        this.renew.addMouseOutHandler(new MouseOutHandler() {
-
-            @Override
-            public void onMouseOut(MouseOutEvent event) {
-                resetHelp();
-            }
-        });
-
     }
 
     private void resetHelp() {
@@ -756,32 +756,28 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
             } else {
                 this.dns.setVisible(false);
             }
-
-            if (this.selectedNetIfConfig.getSearchDomains() != null) {
-                this.search.setText(this.selectedNetIfConfig.getSearchDomains());
-            } else {
-                this.search.setText("");
-            }
-
             refreshForm();
         }
     }
 
     private void refreshForm() {
-
         if (this.selectedNetIfConfig != null && this.selectedNetIfConfig.getHwTypeEnum() == GwtNetIfType.MODEM) {
             this.status.setEnabled(true);
             this.configure.setEnabled(false);
             this.ip.setEnabled(false);
             this.subnet.setEnabled(false);
             this.gateway.setEnabled(false);
-            this.dns.setEnabled(true);
-            this.search.setEnabled(false);
+            if (VMSGS.netIPv4StatusDisabled().equals(this.status.getSelectedValue())
+                    || VMSGS.netIPv4StatusUnmanaged().equals(this.status.getSelectedValue())) {
+                this.dns.setEnabled(false);
+            } else {
+                this.dns.setEnabled(true);
+            }
             this.configure.setSelectedIndex(this.configure.getItemText(0).equals(IPV4_MODE_DHCP_MESSAGE) ? 0 : 1);
-
         } else {
-
-            if (VMSGS.netIPv4StatusDisabled().equals(this.status.getSelectedValue())) {
+            if (VMSGS.netIPv4StatusDisabled().equals(this.status.getSelectedValue())
+                    || VMSGS.netIPv4StatusUnmanaged().equals(this.status.getSelectedValue())
+                    || VMSGS.netIPv4StatusL2Only().equals(this.status.getSelectedValue())) {
                 String configureVal = this.configure.getItemText(0);
                 this.configure.setSelectedIndex(configureVal.equals(IPV4_MODE_DHCP_MESSAGE) ? 0 : 1);
                 this.ip.setText("");
@@ -790,11 +786,9 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
                 this.subnet.setEnabled(false);
                 this.gateway.setEnabled(false);
                 this.dns.setEnabled(false);
-                this.search.setEnabled(false);
                 this.subnet.setText("");
                 this.gateway.setText("");
                 this.dns.setText("");
-                this.search.setText("");
             } else {
                 this.configure.setEnabled(true);
                 String configureValue = this.configure.getSelectedValue();
@@ -805,32 +799,23 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
                     this.renew.setEnabled(true);
                     if (this.status.getSelectedValue().equals(IPV4_STATUS_WAN_MESSAGE)) {
                         this.dns.setEnabled(true);
-                        this.search.setEnabled(true);
                     } else {
                         this.dns.setEnabled(false);
-                        this.search.setEnabled(false);
                     }
                 } else {
                     this.ip.setEnabled(true);
                     this.subnet.setEnabled(true);
-                    // this.gateway.setEnabled(true);
 
                     if (this.status.getSelectedValue().equals(IPV4_STATUS_WAN_MESSAGE)) {
                         this.gateway.setEnabled(true);
                         this.dns.setEnabled(true);
-                        this.search.setEnabled(true);
                     } else {
                         this.gateway.setText("");
                         this.gateway.setEnabled(false);
                         this.dns.setEnabled(false);
-                        this.search.setEnabled(false);
                     }
                     this.renew.setEnabled(false);
                 }
-                /*
-                 * this.dns.setEnabled(true);
-                 * this.search.setEnabled(true);
-                 */
             }
         }
 
@@ -853,7 +838,6 @@ public class TabTcpIpUi extends Composite implements NetworkTab {
         this.subnet.setText("");
         this.gateway.setText("");
         this.dns.setText("");
-        this.search.setText("");
         update();
     }
 

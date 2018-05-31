@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2017, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -36,8 +36,6 @@ import org.eclipse.kura.configuration.ConfigurableComponent;
 import org.eclipse.kura.db.H2DbService;
 import org.eclipse.kura.internal.wire.h2db.common.H2DbServiceHelper;
 import org.eclipse.kura.internal.wire.h2db.store.H2DbDataTypeMapper.JdbcType;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
 import org.eclipse.kura.type.BooleanValue;
 import org.eclipse.kura.type.ByteArrayValue;
 import org.eclipse.kura.type.DataType;
@@ -48,6 +46,7 @@ import org.eclipse.kura.type.LongValue;
 import org.eclipse.kura.type.StringValue;
 import org.eclipse.kura.type.TypedValue;
 import org.eclipse.kura.util.collection.CollectionUtil;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEmitter;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireHelperService;
@@ -77,8 +76,6 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
     private static final String DATA_TYPE = "DATA_TYPE";
 
     private static final Logger logger = LoggerFactory.getLogger(H2DbWireRecordStore.class);
-
-    private static final WireMessages message = LocalizationAdapter.adapt(WireMessages.class);
 
     private static final String SQL_ADD_COLUMN = "ALTER TABLE {0} ADD COLUMN {1} {2};";
 
@@ -140,14 +137,15 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *            the properties
      */
     protected void activate(final ComponentContext componentContext, final Map<String, Object> properties) {
-        logger.debug(message.activatingStore());
+        logger.debug("Activating DB Wire Record Store...");
         this.componentContext = componentContext;
         this.wireRecordStoreOptions = new H2DbWireRecordStoreOptions(properties);
 
-        this.wireSupport = this.wireHelperService.newWireSupport(this);
+        this.wireSupport = this.wireHelperService.newWireSupport(this,
+                (ServiceReference<WireComponent>) componentContext.getServiceReference());
 
         restartDbServiceTracker();
-        logger.debug(message.activatingStoreDone());
+        logger.debug("Activating DB Wire Record Store... Done");
     }
 
     /**
@@ -157,7 +155,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *            the updated service component properties
      */
     public synchronized void updated(final Map<String, Object> properties) {
-        logger.debug(message.updatingStore());
+        logger.debug("Updating DB Wire Record Store...");
 
         final String oldDbServicePid = this.wireRecordStoreOptions.getDbServiceInstancePid();
 
@@ -170,7 +168,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             restartDbServiceTracker();
         }
 
-        logger.debug(message.updatingStoreDone());
+        logger.debug("Updating DB Wire Record Store... Done");
     }
 
     /**
@@ -180,9 +178,9 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *            the component context
      */
     protected void deactivate(final ComponentContext componentContext) {
-        logger.debug(message.deactivatingStore());
+        logger.debug("Deactivating DB Wire Record Store...");
         stopDbServiceTracker();
-        logger.debug(message.deactivatingStoreDone());
+        logger.debug("Deactivating DB Wire Record Store... Done");
     }
 
     /**
@@ -214,16 +212,16 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             if (rsTbls.next()) {
                 // table does exist, truncate it
                 if (noOfRecordsToKeep == 0) {
-                    logger.info(message.truncatingTable(sqlTableName));
+                    logger.info("Truncating table {}...", sqlTableName);
                     this.dbHelper.execute(MessageFormat.format(SQL_TRUNCATE_TABLE, sqlTableName));
                 } else {
-                    logger.info(message.partiallyEmptyingTable(sqlTableName));
+                    logger.info("Partially emptying table {}", sqlTableName);
                     this.dbHelper.execute(MessageFormat.format(SQL_DELETE_RANGE_TABLE, sqlTableName,
                             Integer.toString(noOfRecordsToKeep)));
                 }
             }
         } catch (final SQLException sqlException) {
-            logger.error(message.errorTruncatingTable(sqlTableName), sqlException);
+            logger.error("Error in truncating the table {}...", sqlTableName, sqlException);
         } finally {
             this.dbHelper.close(rsTbls);
             this.dbHelper.close(conn);
@@ -266,7 +264,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
     /** {@inheritDoc} */
     @Override
     public synchronized void onWireReceive(final WireEnvelope wireEvelope) {
-        requireNonNull(wireEvelope, message.wireEnvelopeNonNull());
+        requireNonNull(wireEvelope, "Wire Envelope cannot be null");
 
         final List<WireRecord> records = wireEvelope.getRecords();
 
@@ -299,7 +297,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *             if the provided argument is null
      */
     private void store(final WireRecord wireRecord) {
-        requireNonNull(wireRecord, message.wireRecordNonNull());
+        requireNonNull(wireRecord, "Wire Record cannot be null");
         int retryCount = 0;
         final String tableName = this.wireRecordStoreOptions.getTableName();
         do {
@@ -307,7 +305,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
                 insertDataRecord(tableName, wireRecord);
                 break;
             } catch (final SQLException e) {
-                logger.error(message.insertionFailed(), e);
+                logger.error("Insertion failed. Reconciling Table and Columns...", e);
                 reconcileDB(wireRecord, tableName);
                 retryCount++;
             }
@@ -329,7 +327,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
                 reconcileColumns(tableName, wireRecord);
             }
         } catch (final SQLException ee) {
-            logger.error(message.errorStoring(), ee);
+            logger.error("Error while storing Wire Records...", ee);
         }
     }
 
@@ -345,7 +343,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
                 reconcileTable(tableName);
             }
         } catch (final SQLException ee) {
-            logger.error(message.errorStoring(), ee);
+            logger.error("Error while storing Wire Records...", ee);
         }
     }
 
@@ -360,7 +358,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *             if the provided argument is null
      */
     private void reconcileTable(final String tableName) throws SQLException {
-        requireNonNull(tableName, message.tableNameNonNull());
+        requireNonNull(tableName, "Table name cannot be null");
         final String sqlTableName = this.dbHelper.sanitizeSqlTableAndColumnName(tableName);
         final Connection conn = this.dbHelper.getConnection();
         ResultSet rsTbls = null;
@@ -371,7 +369,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             rsTbls = dbMetaData.getTables(catalog, null, this.wireRecordStoreOptions.getTableName(), TABLE_TYPE);
             if (!rsTbls.next()) {
                 // table does not exist, create it
-                logger.info(message.creatingTable(sqlTableName));
+                logger.info("Creating table {}...", sqlTableName);
                 this.dbHelper.execute(MessageFormat.format(SQL_CREATE_TABLE, sqlTableName));
                 createIndex(this.dbHelper.sanitizeSqlTableAndColumnName(tableName + "_TIMESTAMP"), sqlTableName,
                         "(TIMESTAMP DESC)");
@@ -400,8 +398,8 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *             if any of the provided arguments is null
      */
     private void reconcileColumns(final String tableName, final WireRecord wireRecord) throws SQLException {
-        requireNonNull(tableName, message.tableNameNonNull());
-        requireNonNull(wireRecord, message.wireRecordNonNull());
+        requireNonNull(tableName, "Table name cannot be null");
+        requireNonNull(wireRecord, "Wire Record cannot be null");
 
         Connection conn = null;
         ResultSet rsColumns = null;
@@ -455,8 +453,8 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
      *             if any of the provided arguments is null
      */
     private void insertDataRecord(final String tableName, final WireRecord wireRecord) throws SQLException {
-        requireNonNull(tableName, message.tableNameNonNull());
-        requireNonNull(wireRecord, message.wireRecordNonNull());
+        requireNonNull(tableName, "Table name cannot be null");
+        requireNonNull(wireRecord, "Wire Record cannot be null");
 
         final Map<String, TypedValue<?>> wireRecordProperties = wireRecord.getProperties();
 
@@ -467,7 +465,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             stmt = prepareStatement(connection, tableName, wireRecordProperties, new Date().getTime());
             stmt.execute();
             connection.commit();
-            logger.debug(message.stored());
+            logger.debug("Stored typed value");
         } catch (final SQLException e) {
             this.dbHelper.rollback(connection);
             throw e;
@@ -495,7 +493,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             sbVals.append(", ?");
         }
 
-        logger.debug(message.storingRecord(sqlTableName));
+        logger.debug("Storing data into table {}...", sqlTableName);
         final String sqlInsert = MessageFormat.format(SQL_INSERT_RECORD, sqlTableName, sbCols.toString(),
                 sbVals.toString());
         final PreparedStatement stmt = connection.prepareStatement(sqlInsert);
@@ -534,6 +532,7 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
             i++;
         }
         return stmt;
+
     }
 
     protected void restartDbServiceTracker() {
@@ -547,9 +546,9 @@ public class H2DbWireRecordStore implements WireEmitter, WireReceiver, Configura
                         @Override
                         public H2DbService addingService(ServiceReference<H2DbService> reference) {
                             logger.info("H2DbService instance found");
-                            H2DbService H2DbService = componentContext.getBundleContext().getService(reference);
-                            bindDbService(H2DbService);
-                            return H2DbService;
+                            H2DbService h2DbService = componentContext.getBundleContext().getService(reference);
+                            bindDbService(h2DbService);
+                            return h2DbService;
                         }
 
                         @Override

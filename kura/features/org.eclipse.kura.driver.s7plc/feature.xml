@@ -2,7 +2,7 @@
 <feature
       id="org.eclipse.kura.driver.s7plc"
       label="%featureName"
-      version="1.0.100.qualifier"
+      version="1.0.200.qualifier"
       provider-name="%providerName"
       license-feature="org.eclipse.license"
       license-feature-version="0.0.0">
@@ -21,13 +21,6 @@
 
    <plugin
          id="org.eclipse.kura.driver.s7plc.provider"
-         download-size="0"
-         install-size="0"
-         version="0.0.0"
-         unpack="false"/>
-
-   <plugin
-         id="org.eclipse.kura.driver.s7plc.localization"
          download-size="0"
          install-size="0"
          version="0.0.0"

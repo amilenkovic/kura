@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011, 2017 Eurotech and/or its affiliates
+ * Copyright (c) 2011, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -8,6 +8,7 @@
  *
  * Contributors:
  *     Eurotech
+ *     Red Hat Inc
  *******************************************************************************/
 package org.eclipse.kura.core.configuration.upgrade;
 
@@ -23,11 +24,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.eclipse.kura.configuration.ComponentConfiguration;
 import org.eclipse.kura.configuration.ConfigurationService;
 import org.eclipse.kura.core.configuration.ComponentConfigurationImpl;
-import org.eclipse.kura.core.configuration.XmlComponentConfigurations;
-import org.eclipse.kura.core.configuration.metatype.Tocd;
 import org.eclipse.kura.marshalling.Marshaller;
 import org.eclipse.kura.util.service.ServiceUtil;
-import org.eclipse.kura.wire.WireConfiguration;
+import org.eclipse.kura.wire.graph.MultiportWireConfiguration;
 import org.eclipse.kura.wire.graph.WireComponentConfiguration;
 import org.eclipse.kura.wire.graph.WireGraphConfiguration;
 import org.osgi.framework.BundleContext;
@@ -66,39 +65,41 @@ public class ConfigurationUpgrade {
     private static final String SEPARATOR = ".";
     private static final String PATTERN = "%s.";
 
-    public static XmlComponentConfigurations upgrade(XmlComponentConfigurations xmlConfigs,
-            BundleContext bundleContext) {
-        List<ComponentConfiguration> result = new ArrayList<>();
+    public static void upgrade(final ComponentConfiguration config, final BundleContext bundleContext) {
 
-        for (ComponentConfiguration config : xmlConfigs.getConfigurations()) {
-            String pid = config.getPid();
-            Map<String, Object> props = new HashMap<>(config.getConfigurationProperties());
-            ComponentConfigurationImpl cc = new ComponentConfigurationImpl(pid, (Tocd) config.getDefinition(), props);
-            result.add(cc);
-
-            if (CLOUD_SERVICE_PID.equals(pid)) {
-                props.put(ConfigurationAdmin.SERVICE_FACTORYPID, CLOUD_SERVICE_FACTORY_PID);
-                String name = DATA_SERVICE_REFERENCE_NAME + ComponentConstants.REFERENCE_TARGET_SUFFIX;
-                props.put(name, String.format(REFERENCE_TARGET_VALUE_FORMAT, DATA_SERVICE_PID));
-                props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
-            } else if (DATA_SERVICE_PID.equals(pid)) {
-                props.put(ConfigurationAdmin.SERVICE_FACTORYPID, DATA_SERVICE_FACTORY_PID);
-                String name = DATA_TRANSPORT_SERVICE_REFERENCE_NAME + ComponentConstants.REFERENCE_TARGET_SUFFIX;
-                props.put(name, String.format(REFERENCE_TARGET_VALUE_FORMAT, DATA_TRANSPORT_SERVICE_PID));
-                props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
-            } else if (DATA_TRANSPORT_SERVICE_PID.equals(pid)) {
-                props.put(ConfigurationAdmin.SERVICE_FACTORYPID, DATA_TRANSPORT_SERVICE_FACTORY_PID);
-                props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
-            } else if (WIRE_SERVICE_PID.equals(pid)) {
-                Map<String, Object> convertedProps = new HashMap<>(convertToNewWiresJsonFormat(props, bundleContext));
-                props.clear();
-                props.putAll(convertedProps);
-            }
+        if (config == null) {
+            return;
         }
 
-        XmlComponentConfigurations xmlConfigurations = new XmlComponentConfigurations();
-        xmlConfigurations.setConfigurations(result);
-        return xmlConfigurations;
+        String pid = config.getPid();
+        final Map<String, Object> props = config.getConfigurationProperties();
+
+        if (props == null) {
+            return;
+        }
+
+        final Object factoryPid = props.get(ConfigurationAdmin.SERVICE_FACTORYPID);
+
+        if (CLOUD_SERVICE_PID.equals(pid)) {
+            props.put(ConfigurationAdmin.SERVICE_FACTORYPID, CLOUD_SERVICE_FACTORY_PID);
+            String name = DATA_SERVICE_REFERENCE_NAME + ComponentConstants.REFERENCE_TARGET_SUFFIX;
+            props.put(name, String.format(REFERENCE_TARGET_VALUE_FORMAT, DATA_SERVICE_PID));
+            props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
+        } else if (DATA_SERVICE_PID.equals(pid)) {
+            props.put(ConfigurationAdmin.SERVICE_FACTORYPID, DATA_SERVICE_FACTORY_PID);
+            String name = DATA_TRANSPORT_SERVICE_REFERENCE_NAME + ComponentConstants.REFERENCE_TARGET_SUFFIX;
+            props.put(name, String.format(REFERENCE_TARGET_VALUE_FORMAT, DATA_TRANSPORT_SERVICE_PID));
+            props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
+        } else if (DATA_TRANSPORT_SERVICE_PID.equals(pid)) {
+            props.put(ConfigurationAdmin.SERVICE_FACTORYPID, DATA_TRANSPORT_SERVICE_FACTORY_PID);
+            props.put(KURA_CLOUD_SERVICE_FACTORY_PID, FACTORY_PID);
+        } else if (WIRE_SERVICE_PID.equals(pid)) {
+            Map<String, Object> convertedProps = new HashMap<>(convertToNewWiresJsonFormat(props, bundleContext));
+            props.clear();
+            props.putAll(convertedProps);
+        } else if (WireAssetConfigurationUpgrade.WIRE_ASSET_FACTORY_PID.equals(factoryPid)) {
+            WireAssetConfigurationUpgrade.upgrade(props);
+        }
     }
 
     private static Map<String, Object> convertToNewWiresJsonFormat(Map<String, Object> oldProperties,
@@ -108,7 +109,7 @@ public class ConfigurationUpgrade {
         if (oldWireGraph != null) {
             List<WireComponentConfiguration> wireComponentConfigurations = getWireComponentConfigurationsFromOldJson(
                     oldWireGraph);
-            List<WireConfiguration> wireConfigurations = getInstance(oldProperties);
+            List<MultiportWireConfiguration> wireConfigurations = getInstance(oldProperties);
             WireGraphConfiguration wireGraphConfiguration = new WireGraphConfiguration(wireComponentConfigurations,
                     wireConfigurations);
             String newJson = marshalJson(bundleContext, wireGraphConfiguration);
@@ -166,8 +167,8 @@ public class ConfigurationUpgrade {
         return new WireComponentConfiguration(new ComponentConfigurationImpl(componentPid, null, null), properties);
     }
 
-    private static List<WireConfiguration> getInstance(final Map<String, Object> properties) {
-        final List<WireConfiguration> wireConfs = new CopyOnWriteArrayList<>();
+    private static List<MultiportWireConfiguration> getInstance(final Map<String, Object> properties) {
+        final List<MultiportWireConfiguration> wireConfs = new CopyOnWriteArrayList<>();
         final Set<Long> wireIds = new HashSet<>();
         for (final Map.Entry<String, Object> entry : properties.entrySet()) {
             final String key = entry.getKey();
@@ -198,7 +199,8 @@ public class ConfigurationUpgrade {
                     }
                 }
             }
-            final WireConfiguration configuration = new WireConfiguration(emitterPid, receiverPid);
+            final MultiportWireConfiguration configuration = new MultiportWireConfiguration(emitterPid, receiverPid, 0,
+                    0);
             configuration.setFilter(filter);
             wireConfs.add(configuration);
         }
@@ -206,7 +208,8 @@ public class ConfigurationUpgrade {
     }
 
     private static ServiceReference<Marshaller>[] getJsonMarshallers(BundleContext bundleContext) {
-        String filterString = String.format("(&(kura.service.pid=%s))", "org.eclipse.kura.marshalling.json.provider");
+        String filterString = String.format("(&(kura.service.pid=%s))",
+                "org.eclipse.kura.json.marshaller.unmarshaller.provider");
         return ServiceUtil.getServiceReferences(bundleContext, Marshaller.class, filterString);
     }
 

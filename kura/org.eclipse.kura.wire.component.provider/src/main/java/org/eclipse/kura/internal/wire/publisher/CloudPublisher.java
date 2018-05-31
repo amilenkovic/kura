@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2017 Eurotech and/or its affiliates and others
+ * Copyright (c) 2016, 2018 Eurotech and/or its affiliates and others
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
@@ -29,10 +29,12 @@ import org.eclipse.kura.cloud.CloudClient;
 import org.eclipse.kura.cloud.CloudClientListener;
 import org.eclipse.kura.cloud.CloudService;
 import org.eclipse.kura.configuration.ConfigurableComponent;
-import org.eclipse.kura.localization.LocalizationAdapter;
-import org.eclipse.kura.localization.resources.WireMessages;
 import org.eclipse.kura.message.KuraPayload;
+import org.eclipse.kura.message.KuraPosition;
+import org.eclipse.kura.position.NmeaPosition;
+import org.eclipse.kura.position.PositionService;
 import org.eclipse.kura.type.TypedValue;
+import org.eclipse.kura.wire.WireComponent;
 import org.eclipse.kura.wire.WireEnvelope;
 import org.eclipse.kura.wire.WireHelperService;
 import org.eclipse.kura.wire.WireReceiver;
@@ -76,7 +78,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
                 // recreate the Cloud Client
                 setupCloudClient();
             } catch (final KuraException e) {
-                logger.error(message.cloudClientSetupProblem(), e);
+                logger.error("Cannot setup CloudClient...", e);
             }
             return CloudPublisher.this.cloudService;
         }
@@ -88,7 +90,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
                 // recreate the Cloud Client
                 setupCloudClient();
             } catch (final KuraException e) {
-                logger.error(message.cloudClientSetupProblem(), e);
+                logger.error("Cannot setup CloudClient...", e);
             }
         }
 
@@ -99,8 +101,6 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
     }
 
     private static final Logger logger = LoggerFactory.getLogger(CloudPublisher.class);
-
-    private static final WireMessages message = LocalizationAdapter.adapt(WireMessages.class);
 
     private static final String TOPIC_PATTERN_STRING = "\\$([^\\s/]+)";
     private static final Pattern TOPIC_PATTERN = Pattern.compile(TOPIC_PATTERN_STRING);
@@ -118,6 +118,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
     private CloudPublisherOptions cloudPublisherOptions;
 
     private volatile WireHelperService wireHelperService;
+    private PositionService positionService;
 
     private WireSupport wireSupport;
 
@@ -151,6 +152,14 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
         }
     }
 
+    public void setPositionService(PositionService positionService) {
+        this.positionService = positionService;
+    }
+
+    public void unsetPositionService(PositionService positionService) {
+        this.positionService = null;
+    }
+
     // ----------------------------------------------------------------
     //
     // Activation APIs
@@ -166,8 +175,9 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
      *            the properties
      */
     protected void activate(final ComponentContext componentContext, final Map<String, Object> properties) {
-        logger.debug(message.activatingCloudPublisher());
-        this.wireSupport = this.wireHelperService.newWireSupport(this);
+        logger.debug("Activating Cloud Publisher Wire Component...");
+        this.wireSupport = this.wireHelperService.newWireSupport(this,
+                (ServiceReference<WireComponent>) componentContext.getServiceReference());
         this.bundleContext = componentContext.getBundleContext();
 
         // Update properties
@@ -176,7 +186,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
         this.cloudServiceTrackerCustomizer = new CloudPublisherServiceTrackerCustomizer();
         initCloudServiceTracking();
 
-        logger.debug(message.activatingCloudPublisherDone());
+        logger.debug("Activating Cloud Publisher Wire Component... Done");
     }
 
     /**
@@ -186,7 +196,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
      *            the updated properties
      */
     public void updated(final Map<String, Object> properties) {
-        logger.debug(message.updatingCloudPublisher());
+        logger.debug("Updating Cloud Publisher Wire Component...");
         // Update properties
         this.cloudPublisherOptions = new CloudPublisherOptions(properties);
 
@@ -195,7 +205,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
         }
         initCloudServiceTracking();
 
-        logger.debug(message.updatingCloudPublisherDone());
+        logger.debug("Updating Cloud Publisher Wire Component... Done");
     }
 
     /**
@@ -205,14 +215,14 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
      *            the component context
      */
     protected void deactivate(final ComponentContext componentContext) {
-        logger.debug(message.deactivatingCloudPublisher());
+        logger.debug("Deactivating Cloud Publisher Wire Component...");
         // close the client
         closeCloudClient();
 
         if (nonNull(this.cloudServiceTracker)) {
             this.cloudServiceTracker.close();
         }
-        logger.debug(message.deactivatingCloudPublisherDone());
+        logger.debug("Deactivating Cloud Publisher Wire Component... Done");
     }
 
     /** {@inheritDoc} */
@@ -236,8 +246,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
     /** {@inheritDoc} */
     @Override
     public void onWireReceive(final WireEnvelope wireEnvelope) {
-        requireNonNull(wireEnvelope, message.wireEnvelopeNonNull());
-        logger.info(message.wireEnvelopeReceived(wireEnvelope.getEmitterPid()));
+        requireNonNull(wireEnvelope, "Wire Envelope cannot be null");
 
         if (nonNull(this.cloudService) && nonNull(this.cloudClient)) {
             final List<WireRecord> records = wireEnvelope.getRecords();
@@ -248,7 +257,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
     /** {@inheritDoc} */
     @Override
     public void producersConnected(final Wire[] wires) {
-        requireNonNull(wires, message.wiresNonNull());
+        requireNonNull(wires, "Wires cannot be null");
         this.wireSupport.producersConnected(wires);
     }
 
@@ -309,16 +318,39 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
      *             if the {@link WireRecord} provided is null
      */
     private KuraPayload buildKuraPayload(final WireRecord wireRecord) {
-        requireNonNull(wireRecord, message.wireRecordNonNull());
+        requireNonNull(wireRecord, "Wire Record cannot be null");
         final KuraPayload kuraPayload = new KuraPayload();
-        
+
         kuraPayload.setTimestamp(new Date());
+
+        if (this.cloudPublisherOptions.getPositionType() != PositionType.NONE) {
+            KuraPosition kuraPosition = getPosition();
+            kuraPayload.setPosition(kuraPosition);
+        }
 
         for (final Entry<String, TypedValue<?>> entry : wireRecord.getProperties().entrySet()) {
             kuraPayload.addMetric(entry.getKey(), entry.getValue().getValue());
         }
 
         return kuraPayload;
+    }
+
+    private KuraPosition getPosition() {
+        NmeaPosition position = this.positionService.getNmeaPosition();
+
+        KuraPosition kuraPosition = new KuraPosition();
+        kuraPosition.setAltitude(position.getAltitude());
+        kuraPosition.setLatitude(position.getLatitude());
+        kuraPosition.setLongitude(position.getLongitude());
+
+        if (this.cloudPublisherOptions.getPositionType() == PositionType.FULL) {
+            kuraPosition.setHeading(position.getTrack());
+            kuraPosition.setPrecision(position.getDOP());
+            kuraPosition.setSpeed(position.getSpeed());
+            kuraPosition.setSatellites(position.getNrSatellites());
+        }
+
+        return kuraPosition;
     }
 
     /**
@@ -341,8 +373,8 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
      *             if one of the arguments is null
      */
     private void publish(final List<WireRecord> wireRecords) {
-        requireNonNull(this.cloudClient, message.cloudClientNonNull());
-        requireNonNull(wireRecords, message.wireRecordsNonNull());
+        requireNonNull(this.cloudClient, "Cloud Client cannot be null");
+        requireNonNull(wireRecords, "Wire Records cannot be null");
 
         try {
             for (final WireRecord dataRecord : wireRecords) {
@@ -363,7 +395,7 @@ public final class CloudPublisher implements WireReceiver, CloudClientListener, 
 
             }
         } catch (final Exception e) {
-            logger.error(message.errorPublishingWireRecords(), e);
+            logger.error("Error in publishing wire records using cloud publisher..", e);
         }
     }
 

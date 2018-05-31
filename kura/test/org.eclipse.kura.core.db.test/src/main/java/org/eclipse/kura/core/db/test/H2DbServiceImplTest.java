@@ -50,6 +50,7 @@ public class H2DbServiceImplTest {
             boolean ok = dependencyLatch.await(10, TimeUnit.SECONDS);
             assertTrue(ok);
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             fail("OSGi dependencies unfulfilled");
         }
     }
@@ -67,30 +68,30 @@ public class H2DbServiceImplTest {
         cfgService.updateConfiguration(PID, properties);
     }
 
-    public static void bindCfgSvc(ConfigurationService cfgSvc) {
+    protected void bindCfgSvc(ConfigurationService cfgSvc) {
         cfgService = cfgSvc;
         dependencyLatch.countDown();
     }
 
-    public static void unbindCfgSvc(ConfigurationService cfgSvc) {
+    protected void unbindCfgSvc(ConfigurationService cfgSvc) {
         cfgService = null;
     }
 
-    public static void bindCryptoSvc(CryptoService cSvc) {
+    protected void bindCryptoSvc(CryptoService cSvc) {
         cryptoService = cSvc;
         dependencyLatch.countDown();
     }
 
-    public static void unbindCryptoSvc(CryptoService cSvc) {
+    protected void unbindCryptoSvc(CryptoService cSvc) {
         cryptoService = null;
     }
 
-    public static void bindDbSvc(H2DbService dbSvc) {
+    protected void bindDbSvc(H2DbService dbSvc) {
         dbService = dbSvc;
         dependencyLatch.countDown();
     }
 
-    public static void unbindDbSvc(H2DbService dbSvc) {
+    protected void unbindDbSvc(H2DbService dbSvc) {
         dbService = null;
     }
 
@@ -139,6 +140,7 @@ public class H2DbServiceImplTest {
         try {
             Thread.sleep(100); // wait a bit, just in case
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
         conn = null;
@@ -155,15 +157,16 @@ public class H2DbServiceImplTest {
     }
 
     private void verifyUserAndClose(final String user, Connection conn) throws SQLException {
-        PreparedStatement statement = conn.prepareStatement("SELECT USER()");
+        try (PreparedStatement statement = conn.prepareStatement("SELECT USER()");
+                ResultSet rs = statement.executeQuery();) {
 
-        ResultSet rs = statement.executeQuery();
-        rs.next();
-        String result = rs.getString(1);
+            rs.next();
+            String result = rs.getString(1);
 
-        assertEquals(user, result);
+            assertEquals(user, result);
 
-        conn.close();
+            conn.close();
+        }
     }
 
     @Test
@@ -191,6 +194,7 @@ public class H2DbServiceImplTest {
         try {
             Thread.sleep(100); // wait a bit, just in case
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
         conn = DriverManager.getConnection(newUrl, user, pass);
